@@ -112,31 +112,24 @@ export async function speakText(text) {
   }
   
   const cleanText = text.replace(/\*/g, '').replace(/_/g, '').replace(/#/g, '');
-  const elApiKey = import.meta.env.VITE_ELEVENLABS_API_KEY;
+  const tcApiKey = import.meta.env.VITE_TYPECAST_API_KEY;
 
-  // 3. Coba menggunakan ElevenLabs (Suara Manusia Ultra-Realistis)
-  if (elApiKey && navigator.onLine) {
+  // 3. Coba menggunakan Typecast.ai (Suara AI Pilihan Pengguna)
+  if (tcApiKey && navigator.onLine) {
     try {
-      // Menggunakan Voice "Charlie" (Lebih natural & kasual untuk Bahasa Indonesia di model v2)
-      // Jika Anda ingin menggunakan suara spesifik orang Indonesia:
-      // 1. Buka ElevenLabs -> Voice Library -> Cari "Indonesian"
-      // 2. Add ke VoiceLab Anda, lalu Copy Voice ID-nya dan ganti string di bawah ini:
-      const voiceId = 'IKne3meq5aSn9XLyUdCD'; // Default: Charlie
+      // Menggunakan Voice ID khusus dari pengguna
+      const voiceId = 'tc_69f2e455ea79fd197aa0476f'; 
       
-      const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?optimize_streaming_latency=1`, {
+      const response = await fetch('https://api.typecast.ai/v1/text-to-speech', {
         method: 'POST',
         headers: {
-          'Accept': 'audio/mpeg',
-          'xi-api-key': elApiKey,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'X-API-KEY': tcApiKey
         },
         body: JSON.stringify({
           text: cleanText,
-          model_id: 'eleven_multilingual_v2',
-          voice_settings: {
-            stability: 0.5,
-            similarity_boost: 0.75
-          }
+          voice_id: voiceId,
+          model: 'ssfm-v30'
         })
       });
 
@@ -147,10 +140,10 @@ export async function speakText(text) {
         await currentAudio.play();
         return; // Berhasil! Jangan jalankan suara lokal bawaan HP
       } else {
-        console.warn("ElevenLabs Kuota Habis atau Error. Beralih ke mesin suara lokal HP...");
+        console.warn("Typecast Kuota Habis atau Error. Beralih ke mesin suara lokal HP...");
       }
     } catch (error) {
-      console.error("ElevenLabs Gagal terhubung:", error);
+      console.error("Typecast Gagal terhubung:", error);
     }
   }
 
