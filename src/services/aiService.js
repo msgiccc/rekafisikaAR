@@ -1,17 +1,7 @@
-import { GoogleGenAI } from '@google/genai';
 import React from 'react';
 
-// Initialize Gemini SDK
-const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-let ai = null;
-
-if (apiKey && apiKey.trim() !== '') {
-  try {
-    ai = new GoogleGenAI({ apiKey });
-  } catch (err) {
-    console.error("Gagal menginisialisasi Google GenAI:", err);
-  }
-}
+// Initialize Groq Key
+const apiKey = import.meta.env.VITE_GROQ_API_KEY;
 
 const systemPrompt = `Kamu adalah AI Voice Assistant pintar (RekaFisika AI).
 Tugasmu adalah menjawab pertanyaan pengguna secara langsung, cerdas, dan natural layaknya JARVIS, yang berfokus pada fisika turbin angin energi terbarukan.
@@ -23,24 +13,41 @@ ATURAN WAJIB:
 export async function tanyaAITutorVoice(userPrompt) {
   let responseText = "";
   
-  if (ai && navigator.onLine) {
+  if (apiKey && navigator.onLine) {
     try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: [{ role: 'user', parts: [{ text: systemPrompt + "\n\nPertanyaan: " + userPrompt }] }],
-        config: { temperature: 0.7 }
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: 'llama-3.1-8b-instant',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+          ],
+          temperature: 0.7
+        })
       });
-      if (response.text) {
-        responseText = response.text;
+      
+      const data = await response.json();
+      
+      if (response.ok && data.choices && data.choices[0].message) {
+        responseText = data.choices[0].message.content;
+      } else if (response.status === 429) {
+        responseText = "Maaf, batas penggunaan Groq AI telah tercapai. Silakan coba lagi beberapa saat.";
+      } else {
+        throw new Error(data.error?.message || data.message || "Unknown API Error");
       }
     } catch (error) {
-      console.error("Gemini API gagal:", error);
-      responseText = "Maaf, kunci API Gemini Anda bermasalah atau tidak valid. Sistem gagal memproses pertanyaan Anda.";
+      console.error("Groq API gagal:", error);
+      responseText = "Maaf, gagal terhubung ke satelit Groq AI. Silakan periksa koneksi internet atau kunci API Anda.";
     }
   }
 
   if (!responseText) {
-    responseText = "Sistem offline atau AI belum diinisialisasi dengan benar. Mohon periksa koneksi internet Anda.";
+    responseText = "Sistem offline atau Kunci API Groq belum diatur dengan benar.";
   }
 
   // Pendeteksi Komponen Mesin HANYA DARI PERTANYAAN USER (agar pertanyaan umum tidak tiba-tiba melompat)
