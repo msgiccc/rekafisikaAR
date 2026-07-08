@@ -13,10 +13,12 @@ if (apiKey && apiKey.trim() !== '') {
   }
 }
 
-const systemPrompt = `Kamu adalah AI Smart Tutor Fisika untuk aplikasi RekaFisika AR yang berbasis suara.
-Tugasmu adalah menjelaskan konsep fisika terkait turbin angin energi terbarukan.
-BERIKAN JAWABAN SINGKAT, padat, dan jelas (maksimal 2 kalimat) agar nyaman diucapkan oleh asisten suara (Text-to-Speech).
-Sertakan nama komponen utama (Rotor, Generator, atau Menara) di dalam penjelasanmu.`;
+const systemPrompt = `Kamu adalah AI Voice Assistant pintar (RekaFisika AI).
+Tugasmu adalah menjawab pertanyaan pengguna secara langsung, cerdas, dan natural layaknya JARVIS, yang berfokus pada fisika turbin angin energi terbarukan.
+ATURAN WAJIB:
+- Jawablah secara SINGKAT (maksimal 2 kalimat) agar sangat nyaman didengar lewat Text-to-Speech.
+- Jawab persis apa yang ditanyakan pengguna. JANGAN berikan penjelasan umum jika tidak diminta.
+- Jika pengguna menanyakan spesifik tentang "Rotor", "Generator", atau "Menara", sebutkan kata tersebut dalam jawabanmu.`;
 
 export async function tanyaAITutorVoice(userPrompt) {
   let responseText = "";
@@ -32,40 +34,31 @@ export async function tanyaAITutorVoice(userPrompt) {
         responseText = response.text;
       }
     } catch (error) {
-      console.warn("Gemini API gagal atau timeout, beralih ke Offline Smart Engine...", error);
+      console.error("Gemini API gagal:", error);
+      responseText = "Maaf, kunci API Gemini Anda bermasalah atau tidak valid. Sistem gagal memproses pertanyaan Anda.";
     }
   }
 
   if (!responseText) {
-    responseText = getOfflineResponse(userPrompt.toLowerCase());
+    responseText = "Sistem offline atau AI belum diinisialisasi dengan benar. Mohon periksa koneksi internet Anda.";
   }
 
-  // Pendeteksi Komponen Mesin
-  const combinedText = (userPrompt + " " + responseText).toLowerCase();
+  // Pendeteksi Komponen Mesin HANYA DARI PERTANYAAN USER (agar pertanyaan umum tidak tiba-tiba melompat)
+  const userText = userPrompt.toLowerCase();
   let targetPart = null;
-  if (combinedText.includes('rotor') || combinedText.includes('baling')) {
+  
+  if (userText.includes('rotor') || userText.includes('baling')) {
     targetPart = 'rotor';
-  } else if (combinedText.includes('generator') || combinedText.includes('faraday') || combinedText.includes('nacelle') || combinedText.includes('elektromagnetik') || combinedText.includes('listrik')) {
+  } else if (userText.includes('generator') || userText.includes('faraday') || userText.includes('nacelle')) {
     targetPart = 'generator';
-  } else if (combinedText.includes('menara') || combinedText.includes('tower') || combinedText.includes('tinggi')) {
+  } else if (userText.includes('menara') || userText.includes('tower')) {
     targetPart = 'tower';
   }
 
   return { text: responseText, targetPart };
 }
 
-function getOfflineResponse(text) {
-  if (text.includes('faraday') || text.includes('generator') || text.includes('listrik')) {
-    return "Menurut Hukum Faraday, pergerakan magnet di dalam kumparan generator turbin akan menghasilkan arus listrik induksi murni dari putaran mekanik baling-baling.";
-  }
-  if (text.includes('baling') || text.includes('rotor') || text.includes('aerodinamika')) {
-    return "Gaya angkat aerodinamis memutar rotor turbin, menangkap energi angin dan mengubahnya menjadi **energi kinetik mekanik** yang sangat kuat.";
-  }
-  if (text.includes('menara') || text.includes('tower') || text.includes('tinggi')) {
-    return "Menara harus dibangun sangat tinggi karena kecepatan aliran fluida udara bertambah kuat secara eksponensial semakin jauh dari gesekan permukaan tanah.";
-  }
-  return "Turbin angin bekerja dengan menangkap energi kinetik dari udara yang bergerak, dan mengubahnya menjadi energi listrik ramah lingkungan melalui induksi elektromagnetik.";
-}
+
 
 // Utility: Pembersih Markdown (Mengubah **teks** menjadi <strong> HTML React bergaya hologram)
 export function formatMarkdownToReact(text) {

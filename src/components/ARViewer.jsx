@@ -4,11 +4,11 @@ import { tanyaAITutorVoice, formatMarkdownToReact, speakText } from '../services
 const ARViewer = () => {
   const modelRef = useRef(null);
 
-  // Default Koordinat Hotspots
+  // Default Koordinat Hotspots (Kalibrasi Baru 30m)
   const [hotspotPositions, setHotspotPositions] = useState({
-    rotor: { pos: "0m 5.5m 0.5m", norm: "0m 0m 1m" },
-    generator: { pos: "0m 5.5m -0.3m", norm: "0m 1m 0m" },
-    tower: { pos: "0m 5.2m 0m", norm: "1m 0m 0m" }
+    rotor: { pos: "-0.108m 31.145m -2.543m", norm: "-0.161m 0.739m -0.654m" },
+    generator: { pos: "0.866m 30.734m 1.029m", norm: "0.975m 0.154m 0.159m" },
+    tower: { pos: "0.247m 15.496m -0.614m", norm: "0.645m 0.009m -0.764m" }
   });
 
   // True World-Space Holographic Pop-Up State (Single Dynamic Slot)
@@ -27,13 +27,14 @@ const ARViewer = () => {
   const [voiceStatus, setVoiceStatus] = useState('');
   const [toastMsg, setToastMsg] = useState('');
 
-  const defaultOrbit = "0deg 75deg 3.5m";
-  const defaultTarget = "0m 1.5m 0m";
+  // Karena model ini tingginya 31 meter, kita harus mengubah default target ke titik tengah (15m) dan radius orbit sangat jauh (45m)
+  const defaultOrbit = "0deg 75deg 55m";
+  const defaultTarget = "0m 15m 0m";
 
   const partDetails = {
-    rotor: { title: 'Rotor', formula: 'E_k = ½ m v²', camTarget: '0m 2.5m 0m', camOrbit: '20deg 75deg 2.5m' },
-    generator: { title: 'Generator', formula: 'Ɛ = -N (dΦ / dt)', camTarget: '0m 2.5m 0m', camOrbit: '-150deg 60deg 2.5m' },
-    tower: { title: 'Menara', formula: 'v(h) = v_ref * (h / h_ref)^α', camTarget: '0m 1.2m 0m', camOrbit: '45deg 85deg 3.5m' }
+    rotor: { title: 'Rotor', formula: 'E_k = ½ m v²', camTarget: '0m 31m 0m', camOrbit: '20deg 75deg 15m' },
+    generator: { title: 'Generator', formula: 'Ɛ = -N (dΦ / dt)', camTarget: '0m 31m 0m', camOrbit: '-150deg 60deg 15m' },
+    tower: { title: 'Menara', formula: 'v(h) = v_ref * (h / h_ref)^α', camTarget: '0m 15m 0m', camOrbit: '45deg 85deg 25m' }
   };
 
   const showToast = (msg) => {
@@ -58,15 +59,15 @@ const ARViewer = () => {
     }
 
     if (details) {
-      // Calculate dynamic position (shift X by 0.7m so it doesn't block the model)
+      // Shift X and Y so it floats nicely next to the massive components
       const basePos = hotspotPositions[partKey].pos;
       const parts = basePos.replace(/m/g, '').split(' ').map(parseFloat);
       let shiftedPos = basePos;
       
       if (parts.length === 3) {
-        // Shift X depending on component to look best
-        const shiftX = partKey === 'generator' ? -0.8 : 0.8;
-        shiftedPos = `${(parts[0] + shiftX).toFixed(3)}m ${(parts[1] + 0.2).toFixed(3)}m ${(parts[2]).toFixed(3)}m`;
+        const shiftX = partKey === 'generator' ? -2.5 : 2.5;
+        // Geser sedikit ke atas dan ke samping agar popup tidak menutupi model 30 meter
+        shiftedPos = `${(parts[0] + shiftX).toFixed(3)}m ${(parts[1] + 1.5).toFixed(3)}m ${(parts[2]).toFixed(3)}m`;
       }
 
       setActivePopup({
@@ -116,7 +117,7 @@ const ARViewer = () => {
     recognition.onresult = async (event) => {
       const transcript = event.results[0][0].transcript;
       setIsListening(false);
-      setVoiceStatus('🧠 Memproses gelombang suara...');
+      setVoiceStatus(`🗣️ "${transcript}"`);
       
       try {
         const response = await tanyaAITutorVoice(transcript);
@@ -125,10 +126,18 @@ const ARViewer = () => {
         if (response.targetPart) {
           activatePart(response.targetPart, response.text);
         } else {
-          // Default to tower if no specific part detected
-          activatePart('tower', response.text);
+          // General answer: don't move the camera, just show a center popup
+          setActivePopup({
+            isOpen: true,
+            title: 'Tutor AI RekaFisika',
+            text: response.text,
+            formula: '', // No specific formula for general questions
+            position: '0m 2.0m 0m',
+            normal: '0m 1m 0m'
+          });
         }
-        setVoiceStatus('');
+        
+        setTimeout(() => setVoiceStatus(''), 4000);
       } catch (error) {
         setVoiceStatus('Gagal terhubung ke AI.');
         setTimeout(() => setVoiceStatus(''), 3000);
