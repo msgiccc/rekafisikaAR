@@ -94,33 +94,76 @@ export function formatMarkdownToReact(text) {
   });
 }
 
-// Layanan Text-to-Speech Native Browser
-export function speakText(text) {
-  if (!window.speechSynthesis) return;
-  window.speechSynthesis.cancel();
-  
-  const cleanText = text.replace(/\*/g, '').replace(/_/g, '').replace(/#/g, '');
-  const utterance = new SpeechSynthesisUtterance(cleanText);
-  
-  // ==========================================
-  // PENGATURAN SUARA AI (BISA ANDA UBAH DI SINI)
-  // ==========================================
-  utterance.lang = 'id-ID'; 
-  utterance.rate = 1.0;  // Kecepatan membaca (0.5 lambat, 1.0 normal, 1.5 cepat)
-  utterance.pitch = 1.1; // Nada suara (0.1 suara berat/laki-laki, 1.0 normal, 2.0 suara kecil/kartun)
+// Audio instance global agar bisa dihentikan saat dipanggil berulang
+let currentAudio = null;
 
-  // Mencoba memilih jenis suara (Voice) yang berbeda jika tersedia di perangkat
-  const voices = window.speechSynthesis.getVoices();
-  const idVoices = voices.filter(v => v.lang.includes('id'));
-  
-  if (idVoices.length > 0) {
-    // Menggunakan suara default Indonesia
-    utterance.voice = idVoices[0];
-    
-    // Jika perangkat Anda memiliki lebih dari 1 jenis suara bahasa Indonesia
-    // (misalnya ada varian Pria dan Wanita), Anda bisa mengubah angka indeksnya:
-    // utterance.voice = idVoices[1]; // Hapus tanda komentar (//) di depan jika ingin tes suara ke-2
+// Layanan Text-to-Speech (ElevenLabs Premium + Native Browser Fallback)
+export async function speakText(text) {
+  // 1. Hentikan suara yang sedang berjalan (ElevenLabs)
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio.currentTime = 0;
+    currentAudio = null;
   }
   
-  window.speechSynthesis.speak(utterance);
+  // 2. Hentikan suara bawaan (Browser TTS)
+  if (window.speechSynthesis) {
+    window.speechSynthesis.cancel();
+  }
+  
+  const cleanText = text.replace(/\*/g, '').replace(/_/g, '').replace(/#/g, '');
+  const elApiKey = import.meta.env.VITE_ELEVENLABS_API_KEY;
+
+  // 3. Coba menggunakan ElevenLabs (Suara Manusia Ultra-Realistis)
+  if (elApiKey && navigator.onLine) {
+    try {
+      // Menggunakan Adam (Suara Pria) dengan model Multilingual v2 yang mendukung bahasa Indonesia
+      const voiceId = 'pNInz6obpgDQGcFmaJcg'; 
+      const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?optimize_streaming_latency=1`, {
+        method: 'POST',
+        headers: {
+          'Accept': 'audio/mpeg',
+          'xi-api-key': elApiKey,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          text: cleanText,
+          model_id: 'eleven_multilingual_v2',
+          voice_settings: {
+            stability: 0.5,
+            similarity_boost: 0.75
+          }
+        })
+      });
+
+      if (response.ok) {
+        const audioBlob = await response.blob();
+        const audioUrl = URL.createObjectURL(audioBlob);
+        currentAudio = new Audio(audioUrl);
+        await currentAudio.play();
+        return; // Berhasil! Jangan jalankan suara lokal bawaan HP
+      } else {
+        console.warn("ElevenLabs Kuota Habis atau Error. Beralih ke mesin suara lokal HP...");
+      }
+    } catch (error) {
+      console.error("ElevenLabs Gagal terhubung:", error);
+    }
+  }
+
+  // 4. STRATEGI CADANGAN (FALLBACK): Gunakan suara lokal (Browser TTS) jika ElevenLabs gagal/habis kuota
+  if (window.speechSynthesis) {
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+    utterance.lang = 'id-ID'; 
+    utterance.rate = 1.0; 
+    utterance.pitch = 1.1; 
+
+    const voices = window.speechSynthesis.getVoices();
+    const idVoices = voices.filter(v => v.lang.includes('id'));
+    
+    if (idVoices.length > 0) {
+      utterance.voice = idVoices[0];
+    }
+    
+    window.speechSynthesis.speak(utterance);
+  }
 }
