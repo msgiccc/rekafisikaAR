@@ -1,19 +1,19 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { tanyaAITutor } from '../services/aiService';
 
-const AITutor = ({ triggerMessage, onKeywordMatch, setAiHudContent, setIsAiThinking }) => {
+const AITutor = () => {
   const [history, setHistory] = useState([
     { sender: 'ai', text: 'Halo! Saya RekaFisika AI. Ada yang ingin kamu tanyakan tentang konsep energi terbarukan hari ini?' }
   ]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [aiStatus, setAiStatus] = useState('offline'); // 'online' atau 'offline'
+  const [aiStatus, setAiStatus] = useState('offline');
   const chatEndRef = useRef(null);
 
   const quickChips = [
-    "Bagaimana prinsip aerodinamika pada baling-baling turbin?",
-    "Jelaskan konversi energi mekanik ke listrik di generator!",
-    "Apa yang mempengaruhi efisiensi daya turbin angin?"
+    "Bagaimana prinsip aerodinamika baling-baling?",
+    "Jelaskan hukum Faraday di generator!",
+    "Apa itu Batas Betz pada efisiensi turbin?"
   ];
 
   const scrollToBottom = () => {
@@ -24,92 +24,72 @@ const AITutor = ({ triggerMessage, onKeywordMatch, setAiHudContent, setIsAiThink
     scrollToBottom();
   }, [history, loading]);
 
-  // Efek ketika menerima trigger dari komponen AR (klik hotspot)
-  useEffect(() => {
-    if (triggerMessage) {
-      handleSend(triggerMessage);
-    }
-  }, [triggerMessage]);
-
   const handleSend = async (text) => {
     if (!text.trim()) return;
     
-    // Add user message
     setHistory(prev => [...prev, { sender: 'user', text }]);
     setInput('');
     setLoading(true);
     
-    // Update AR HUD State
-    if (setIsAiThinking) setIsAiThinking(true);
-    if (setAiHudContent) setAiHudContent('');
-    
     try {
       const response = await tanyaAITutor(text);
-      
-      // Update status badge based on source
       setAiStatus(response.source === 'GEMINI_FREE_API' ? 'online' : 'offline');
-
-      const aiResponseText = response.text;
-      setHistory(prev => [...prev, { sender: 'ai', text: aiResponseText }]);
-
-      // Trigger AR Camera based on AI keywords
-      const lowerResp = aiResponseText.toLowerCase();
-      if (lowerResp.includes('baling-baling') || lowerResp.includes('rotor')) {
-        onKeywordMatch('baling-baling');
-      } else if (lowerResp.includes('generator') || lowerResp.includes('elektromagnetik')) {
-        onKeywordMatch('generator');
-      } else if (lowerResp.includes('menara') || lowerResp.includes('tower')) {
-        onKeywordMatch('menara');
-      }
-
-      // Update AR HUD Content (ambil paragraf pertama atau pangkas agar singkat)
-      if (setAiHudContent) {
-        const sentences = aiResponseText.split(/(?<=[.!?])\s+/);
-        const shortSummary = sentences.slice(0, 3).join(' '); // Maksimal 3 kalimat
-        setAiHudContent(shortSummary);
-      }
-
+      setHistory(prev => [...prev, { sender: 'ai', text: response.text }]);
     } catch (error) {
       console.error(error);
       setHistory(prev => [...prev, { sender: 'ai', text: "Maaf, terjadi kesalahan pada sistem AI." }]);
-      if (setAiHudContent) setAiHudContent("Kesalahan koneksi AI.");
     } finally {
       setLoading(false);
-      if (setIsAiThinking) setIsAiThinking(false);
     }
+  };
+
+  // Utility to parse markdown bold and newlines safely
+  const renderFormattedAIResponse = (text) => {
+    // Split by newlines first
+    const paragraphs = text.split('\\n').filter(p => p.trim() !== '');
+    
+    return paragraphs.map((paragraph, i) => {
+      // Split by ** to find bold sections
+      const parts = paragraph.split(/\\*\\*(.*?)\\*\\*/g);
+      
+      return (
+        <p key={i} style={{ marginBottom: '0.75rem' }}>
+          {parts.map((part, index) => {
+            // Every odd index in the split result was wrapped in **
+            if (index % 2 !== 0) {
+              return <strong key={index} style={{ color: '#059669', fontWeight: '700' }}>{part}</strong>;
+            }
+            // Further process single * for italic if needed, but the prompt just asked to remove * leakages.
+            // Let's remove any stray single asterisks that might leak.
+            const cleanPart = part.replace(/\\*/g, '');
+            return <span key={index}>{cleanPart}</span>;
+          })}
+        </p>
+      );
+    });
   };
 
   return (
     <div className="tutor-card">
       <div className="tutor-header">
-        <h2>🤖 RekaFisika AI - Asisten Fisika Real-Time</h2>
+        <h2>🤖 RekaFisika AI Tutor</h2>
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-          {aiStatus === 'online' ? (
-            <span className="ai-status-badge online">⚡ Powered by Gemini AI (Free Tier)</span>
-          ) : (
-            <span className="ai-status-badge offline">🛡️ Offline Smart Engine Active</span>
-          )}
+          <span className={`ai-status-badge ${aiStatus}`}>
+            {aiStatus === 'online' ? '⚡ Powered by Google Gemini AI (Free Tier)' : '🛡️ Offline Smart Engine'}
+          </span>
         </div>
       </div>
       
       <div className="tutor-chat-area">
-        <div className="ar-connection-indicator">
-          <span>🔗</span> Terhubung langsung dengan AR Engine & Hologram HUD
-        </div>
-
         {history.map((msg, index) => (
           <div key={index} className={`chat-bubble ${msg.sender}`}>
-            {msg.text.split('\n\n').map((paragraph, i) => (
-              <p key={i} style={{ marginBottom: i < msg.text.split('\n\n').length - 1 ? '0.5rem' : '0' }}>
-                {paragraph}
-              </p>
-            ))}
+            {msg.sender === 'ai' ? renderFormattedAIResponse(msg.text) : msg.text}
           </div>
         ))}
         {loading && (
           <div className="chat-loading">
             <div className="dot-flashing"></div>
-            <span>AI sedang menganalisis fisika...</span>
+            <span>AI sedang merumuskan fisika...</span>
           </div>
         )}
         <div ref={chatEndRef} />
