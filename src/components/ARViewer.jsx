@@ -1,52 +1,145 @@
-import React, { useRef, useState } from 'react';
-import { tanyaAITutor, formatMarkdownToReact } from '../services/aiService';
+import React, { useRef, useState, useEffect } from 'react';
+import { tanyaAITutorVoice, formatMarkdownToReact, speakText } from '../services/aiService';
 
 const ARViewer = () => {
   const modelRef = useRef(null);
 
-  // States
-  const [activePopup, setActivePopup] = useState({
-    isOpen: false,
-    partName: '',
-    aiText: '',
-    formula: '',
-    loading: false
+  // Popups State (World-Space Holograms)
+  const [popups, setPopups] = useState({
+    rotor: { isOpen: false, text: '', formula: 'E_k = ½ m v²', title: 'Rotor' },
+    generator: { isOpen: false, text: '', formula: 'Ɛ = -N (dΦ / dt)', title: 'Generator' },
+    tower: { isOpen: false, text: '', formula: 'v(h) = v_ref * (h / h_ref)^α', title: 'Menara' }
   });
-  const [isCalibrating, setIsCalibrating] = useState(false);
 
-  // Default camera
-  const defaultOrbit = "0deg 75deg 3m";
+  // UI States
+  const [isCalibrating, setIsCalibrating] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [voiceStatus, setVoiceStatus] = useState(''); // e.g. "Mendengarkan...", "AI Berpikir..."
+
+  const defaultOrbit = "0deg 75deg 3.5m";
   const defaultTarget = "0m 1.5m 0m";
 
-  // Hotspot Click Handler
-  const handleHotspotClick = async (partName, promptTrigger, target, orbit, formula) => {
-    if (modelRef.current) {
-      modelRef.current.cameraTarget = target;
-      modelRef.current.cameraOrbit = orbit;
-    }
-    
-    setActivePopup({
-      isOpen: true,
-      partName,
-      aiText: '',
-      formula,
-      loading: true
-    });
-
-    try {
-      const response = await tanyaAITutor(promptTrigger);
-      setActivePopup(prev => ({ ...prev, aiText: response.text, loading: false }));
-    } catch (error) {
-      setActivePopup(prev => ({ ...prev, aiText: 'Gagal menghubungi server AI.', loading: false }));
-    }
+  // Coordinates data
+  const hotspotData = {
+    rotor: { target: '0m 2.4m 0m', orbit: '20deg 75deg 2.5m' },
+    generator: { target: '0m 2.4m 0m', orbit: '-150deg 60deg 2.5m' },
+    tower: { target: '0m 1.2m 0m', orbit: '45deg 85deg 3.5m' }
   };
 
-  const closeHUD = () => {
-    setActivePopup({ isOpen: false, partName: '', aiText: '', formula: '', loading: false });
+  // Tutup semua popup dan reset kamera
+  const resetView = () => {
+    setPopups(prev => ({
+      rotor: { ...prev.rotor, isOpen: false },
+      generator: { ...prev.generator, isOpen: false },
+      tower: { ...prev.tower, isOpen: false }
+    }));
     if (modelRef.current) {
       modelRef.current.cameraTarget = defaultTarget;
       modelRef.current.cameraOrbit = defaultOrbit;
     }
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
+  };
+
+  // Aktivasi satu bagian mesin (Kamera pindah & Buka slot popup-nya)
+  const activatePart = (partName, aiText) => {
+    const data = hotspotData[partName];
+    if (modelRef.current && data) {
+      modelRef.current.cameraTarget = data.target;
+      modelRef.current.cameraOrbit = data.orbit;
+    }
+
+    setPopups(prev => {
+      const newPopups = {
+        rotor: { ...prev.rotor, isOpen: false },
+        generator: { ...prev.generator, isOpen: false },
+        tower: { ...prev.tower, isOpen: false }
+      };
+      
+      if (newPopups[partName]) {
+        newPopups[partName].isOpen = true;
+        newPopups[partName].text = aiText;
+      }
+      return newPopups;
+    });
+  };
+
+  // Saat tombol Sci-Fi diklik manual di layar AR
+  const handleManualHotspotClick = async (partName, triggerText) => {
+    resetView();
+    setVoiceStatus(`AI memindai ${partName}...`);
+    
+    // Tampilkan popup kosong terlebih dahulu (Loading state)
+    activatePart(partName, "⚡ Mengambil data fisika...");
+
+    try {
+      const response = await tanyaAITutorVoice(triggerText);
+      activatePart(partName, response.text);
+      speakText(response.text);
+      setVoiceStatus('');
+    } catch (error) {
+      activatePart(partName, "Gagal terhubung ke AI.");
+      setVoiceStatus('');
+    }
+  };
+
+  // Voice AI Co-Pilot Logic
+  const startListening = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("Maaf, browser Anda tidak mendukung Voice API. Silakan gunakan tombol hotspot manual.");
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'id-ID';
+    
+    recognition.onstart = () => {
+      resetView();
+      setIsListening(true);
+      setVoiceStatus('🎙️ Mendengarkan suara Anda...');
+    };
+
+    recognition.onresult = async (event) => {
+      const transcript = event.results[0][0].transcript;
+      setIsListening(false);
+      setVoiceStatus('🧠 AI Berpikir...');
+      
+      try {
+        const response = await tanyaAITutorVoice(transcript);
+        
+        // Putar suara kembali
+        speakText(response.text);
+        
+        // Pindahkan kamera ke komponen yang dibicarakan
+        if (response.targetPart) {
+          activatePart(response.targetPart, response.text);
+        } else {
+          // Jika tidak ada part yang spesifik, tampilkan di tengah
+          setPopups(prev => ({
+            ...prev,
+            tower: { ...prev.tower, isOpen: true, text: response.text }
+          }));
+        }
+        
+        setVoiceStatus('');
+      } catch (error) {
+        console.error(error);
+        setVoiceStatus('Gagal terhubung ke AI.');
+        setTimeout(() => setVoiceStatus(''), 3000);
+      }
+    };
+
+    recognition.onerror = (event) => {
+      setIsListening(false);
+      setVoiceStatus('Gagal mendengarkan. Coba lagi.');
+      setTimeout(() => setVoiceStatus(''), 3000);
+    };
+
+    recognition.onend = () => {
+      if (isListening) setIsListening(false);
+    };
+
+    recognition.start();
   };
 
   // Live Calibration Tool
@@ -54,181 +147,138 @@ const ARViewer = () => {
     if (!isCalibrating || !modelRef.current) return;
     const viewer = modelRef.current;
     const rect = viewer.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    
-    // API WebXR model-viewer
-    const hit = viewer.positionAndNormalFromPoint(x, y);
-
+    const hit = viewer.positionAndNormalFromPoint(e.clientX - rect.left, e.clientY - rect.top);
     if (hit) {
-      const posX = hit.position.x.toFixed(3);
-      const posY = hit.position.y.toFixed(3);
-      const posZ = hit.position.z.toFixed(3);
-      const normX = hit.normal.x.toFixed(3);
-      const normY = hit.normal.y.toFixed(3);
-      const normZ = hit.normal.z.toFixed(3);
-      
-      const positionStr = `${posX}m ${posY}m ${posZ}m`;
-      const normalStr = `${normX}m ${normY}m ${normZ}m`;
-      
-      alert(`🎯 Koordinat Hotspot Ditemukan!\n\nPosisi:\ndata-position="${positionStr}"\n\nNormal:\ndata-normal="${normalStr}"\n\nSilakan salin koordinat ini ke kode Anda.`);
+      const p = hit.position;
+      const n = hit.normal;
+      alert(`🎯 Koordinat Ditemukan!\nPosisi: data-position="${p.x.toFixed(3)}m ${p.y.toFixed(3)}m ${p.z.toFixed(3)}m"\nNormal: data-normal="${n.x.toFixed(3)}m ${n.y.toFixed(3)}m ${n.z.toFixed(3)}m"`);
     }
   };
 
   return (
-    <div className="ar-card">
-      <div className="ar-header">
-        <div className="ar-header-top" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <h2>Laboratorium Fisika 3D</h2>
-            <p className="ar-badge-focus">🎯 Ultra-Realistic Render</p>
-          </div>
-          <button 
-            className={`btn-calibration ${isCalibrating ? 'active' : ''}`}
-            onClick={() => setIsCalibrating(!isCalibrating)}
-          >
-            {isCalibrating ? '🛑 Tutup Kalibrasi' : '🛠️ Mode Kalibrasi Posisi'}
-          </button>
-        </div>
+    <div className="ar-fullscreen-container">
+      {/* 1. Header & Calibration */}
+      <div className="ar-overlay-header">
+        <h1 className="ar-title">RekaFisika AR <span>World-Space OS</span></h1>
+        <button 
+          className={`btn-calibration ${isCalibrating ? 'active' : ''}`}
+          onClick={() => setIsCalibrating(!isCalibrating)}
+        >
+          {isCalibrating ? '🛑 Tutup Kalibrasi' : '🛠️ Kalibrasi Posisi'}
+        </button>
       </div>
-      
-      <div className="ar-model-container">
-        {/* Banner Kalibrasi */}
-        {isCalibrating && (
-          <div className="calibration-banner">
-            👇 Klik langsung tepat di atas permukaan komponen model 3D untuk mendapatkan koordinat posisi yang 100% pas!
+
+      {isCalibrating && (
+        <div className="calibration-banner">
+          👇 Klik langsung pada model 3D untuk mendapatkan koordinat (X,Y,Z).
+        </div>
+      )}
+
+      {/* Status Bar */}
+      {voiceStatus && (
+        <div className="voice-status-bar">
+          {voiceStatus}
+        </div>
+      )}
+
+      {/* 2. Full-Screen Model Viewer */}
+      <model-viewer
+        ref={modelRef}
+        src="/turbin.glb"
+        alt="Model 3D Turbin Angin"
+        ar ar-modes="webxr scene-viewer quick-look"
+        camera-controls auto-rotate autoplay
+        shadow-intensity="2" shadow-softness="0.8" exposure="1.15" environment-image="neutral"
+        camera-orbit={defaultOrbit} camera-target={defaultTarget}
+        onClick={handleModelClick}
+        style={{ width: "100%", height: "100%", backgroundColor: "#020617", outline: "none" }}
+      >
+        {/* ======== HOTSPOTS & WORLD-SPACE POPUPS ======== */}
+
+        {/* --- ROTOR --- */}
+        <button 
+          slot="hotspot-rotor" data-position="0m 2.4m 0.4m" data-normal="0m 0m 1m" 
+          className="hotspot-scifi"
+          onClick={() => handleManualHotspotClick('rotor', 'Jelaskan tentang gaya aerodinamis dan energi kinetik pada baling-baling turbin ini.')}
+        >
+          <div className="hotspot-ring"></div>
+          <div className="hotspot-dot"></div>
+          <div className="hotspot-tag">Rotor</div>
+        </button>
+
+        {/* World-Space Popup for Rotor (Shifted slightly to the right) */}
+        {popups.rotor.isOpen && (
+          <div slot="hotspot-popup-rotor" data-position="0.8m 2.6m 0.4m" data-normal="0m 0m 1m" className="world-space-card">
+            <div className="ws-card-header">
+              <h3>⚡ {popups.rotor.title}</h3>
+              <button onClick={resetView}>✕</button>
+            </div>
+            <div className="ws-card-body">{formatMarkdownToReact(popups.rotor.text)}</div>
+            <div className="ws-card-formula">{popups.rotor.formula}</div>
           </div>
         )}
 
-        {/* 1. Ultra-Realistic 3D Setup */}
-        <model-viewer
-          ref={modelRef}
-          src="/turbin.glb"
-          alt="Model 3D Turbin Angin Energi Terbarukan"
-          ar
-          ar-modes="webxr scene-viewer quick-look"
-          camera-controls
-          auto-rotate
-          rotation-per-second="15deg"
-          autoplay
-          shadow-intensity="2"
-          shadow-softness="0.8"
-          exposure="1.15"
-          environment-image="neutral"
-          tone-mapping="neutral"
-          camera-orbit={defaultOrbit}
-          camera-target={defaultTarget}
-          onClick={handleModelClick}
-          style={{ 
-            width: "100%", 
-            height: "600px", 
-            minHeight: "70vh", 
-            backgroundColor: "#0b0f19", 
-            borderRadius: "0 0 20px 20px", 
-            position: "relative", 
-            overflow: "hidden", 
-            border: "1px solid rgba(255,255,255,0.15)", 
-            boxShadow: "0 20px 50px rgba(0,0,0,0.5)" 
-          }}
+        {/* --- GENERATOR --- */}
+        <button 
+          slot="hotspot-generator" data-position="0m 2.4m -0.3m" data-normal="0m 1m 0m" 
+          className="hotspot-scifi"
+          onClick={() => handleManualHotspotClick('generator', 'Jelaskan hukum Faraday dan induksi elektromagnetik yang terjadi di dalam generator ini.')}
         >
-          {/* Fallback Astronaut jika file turbin.glb belum ada: src="https://modelviewer.dev/shared-assets/models/Astronaut.glb" */}
-          
-          {/* 2. In-AR Holographic AI Pop-Up Card */}
-          {activePopup.isOpen && (
-            <div className="ar-ai-popup">
-              <div className="popup-header">
-                <h3>🔍 AI Scanner: {activePopup.partName}</h3>
-                <button className="popup-close-btn" onClick={closeHUD}>✕ Tutup HUD</button>
-              </div>
-              
-              <div className="popup-body">
-                {activePopup.loading ? (
-                  <div className="popup-loading">
-                    <div className="spinner-ring"></div>
-                    <p>⚡ RekaFisika AI sedang memindai fisika pada {activePopup.partName}...</p>
-                  </div>
-                ) : (
-                  <div className="popup-content">
-                    <div className="popup-text">
-                      {formatMarkdownToReact(activePopup.aiText)}
-                    </div>
-                    {activePopup.formula && (
-                      <div className="popup-formula">
-                        <span className="formula-label">Rumus Matematis Terkait:</span>
-                        <code>{activePopup.formula}</code>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
+          <div className="hotspot-ring"></div>
+          <div className="hotspot-dot"></div>
+          <div className="hotspot-tag">Generator</div>
+        </button>
+
+        {/* World-Space Popup for Generator */}
+        {popups.generator.isOpen && (
+          <div slot="hotspot-popup-generator" data-position="-0.7m 2.7m -0.3m" data-normal="0m 1m 0m" className="world-space-card">
+            <div className="ws-card-header">
+              <h3>⚡ {popups.generator.title}</h3>
+              <button onClick={resetView}>✕</button>
             </div>
-          )}
+            <div className="ws-card-body">{formatMarkdownToReact(popups.generator.text)}</div>
+            <div className="ws-card-formula">{popups.generator.formula}</div>
+          </div>
+        )}
 
-          {/* Sci-Fi Hotspot 1: Rotor */}
-          <button 
-            slot="hotspot-rotor" 
-            data-position="0m 2.4m 0.4m" 
-            data-normal="0m 0m 1m" 
-            className="hotspot-scifi"
-            onClick={() => handleHotspotClick(
-              'Rotor (Baling-baling)', 
-              'Jelaskan konsep aerodinamika (gaya angkat) dan rumus energi kinetik angin E_k = 0.5 * m * v^2 yang memutar baling-baling turbin angin.',
-              '0m 2.4m 0m',
-              '20deg 75deg 3m',
-              'E_k = ½ m v²'
-            )}
-          >
-            <div className="hotspot-ring"></div>
-            <div className="hotspot-dot"></div>
-            <div className="hotspot-tag">Rotor <span>[Klik]</span></div>
-          </button>
+        {/* --- TOWER --- */}
+        <button 
+          slot="hotspot-tower" data-position="0m 1.2m 0m" data-normal="1m 0m 0m" 
+          className="hotspot-scifi"
+          onClick={() => handleManualHotspotClick('tower', 'Jelaskan profil kecepatan angin logaritmik dan mengapa menara turbin harus tinggi.')}
+        >
+          <div className="hotspot-ring"></div>
+          <div className="hotspot-dot"></div>
+          <div className="hotspot-tag">Menara</div>
+        </button>
 
-          {/* Sci-Fi Hotspot 2: Generator */}
-          <button 
-            slot="hotspot-generator" 
-            data-position="0m 2.4m -0.3m" 
-            data-normal="0m 1m 0m" 
-            className="hotspot-scifi"
-            onClick={() => handleHotspotClick(
-              'Generator (Nacelle)', 
-              'Jelaskan tentang induksi elektromagnetik hukum Faraday di dalam generator turbin angin untuk mengubah putaran mekanik menjadi listrik murni.',
-              '0m 2.4m 0m',
-              '-150deg 60deg 2.5m',
-              'Ɛ = -N (dΦ / dt)'
-            )}
-          >
-            <div className="hotspot-ring"></div>
-            <div className="hotspot-dot"></div>
-            <div className="hotspot-tag">Generator <span>[Klik]</span></div>
-          </button>
+        {/* World-Space Popup for Tower */}
+        {popups.tower.isOpen && (
+          <div slot="hotspot-popup-tower" data-position="1.0m 1.4m 0m" data-normal="1m 0m 0m" className="world-space-card">
+            <div className="ws-card-header">
+              <h3>⚡ {popups.tower.title}</h3>
+              <button onClick={resetView}>✕</button>
+            </div>
+            <div className="ws-card-body">{formatMarkdownToReact(popups.tower.text)}</div>
+            <div className="ws-card-formula">{popups.tower.formula}</div>
+          </div>
+        )}
 
-          {/* Sci-Fi Hotspot 3: Tower */}
-          <button 
-            slot="hotspot-tower" 
-            data-position="0m 1.2m 0m" 
-            data-normal="1m 0m 0m" 
-            className="hotspot-scifi"
-            onClick={() => handleHotspotClick(
-              'Menara Penopang', 
-              'Jelaskan mengapa desain menara turbin angin harus sangat tinggi menggunakan prinsip mekanika fluida udara (profil kecepatan angin terhadap ketinggian).',
-              '0m 1.2m 0m',
-              '45deg 85deg 4m',
-              'v(h) = v_ref * (h / h_ref)^α'
-            )}
-          >
-            <div className="hotspot-ring"></div>
-            <div className="hotspot-dot"></div>
-            <div className="hotspot-tag">Menara <span>[Klik]</span></div>
-          </button>
+        <button slot="ar-button" className="ar-button-native">
+          🌐 Aktifkan AR (Kamera)
+        </button>
+      </model-viewer>
 
-          {/* Tombol WebAR Asli Google */}
-          <button slot="ar-button" className="ar-button" style={{
-            backgroundColor: '#10b981', color: '#fff', borderRadius: '9999px', border: 'none', position: 'absolute', bottom: '24px', left: '50%', transform: 'translateX(-50%)', padding: '12px 24px', fontWeight: 'bold', cursor: 'pointer', zIndex: 10, boxShadow: '0 4px 15px rgba(16,185,129,0.4)'
-          }}>
-            🌐 Lihat di Ruanganmu (WebAR)
-          </button>
-        </model-viewer>
-      </div>
+      {/* 3. Voice Assistant HUD Microphone */}
+      <button 
+        className={`voice-hud-btn ${isListening ? 'listening' : ''}`}
+        onClick={startListening}
+        title="Bicara dengan AI"
+      >
+        <div className="mic-icon">🎙️</div>
+        {isListening && <div className="audio-wave-rings"></div>}
+      </button>
+
     </div>
   );
 };

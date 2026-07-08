@@ -1,7 +1,7 @@
 import { GoogleGenAI } from '@google/genai';
 import React from 'react';
 
-// Initialize Gemini SDK only if API key is provided
+// Initialize Gemini SDK
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 let ai = null;
 
@@ -13,52 +13,61 @@ if (apiKey && apiKey.trim() !== '') {
   }
 }
 
-const systemPrompt = `Kamu adalah AI Smart Tutor Fisika untuk aplikasi RekaFisika AR. 
-Tugasmu adalah menjelaskan konsep fisika terkait energi terbarukan (turbin angin, panel surya, dll) kepada siswa.
-Gunakan bahasa Indonesia yang edukatif, ilmiah namun mudah dipahami.
-Batasi jawaban maksimal 2 paragraf singkat. Jangan menggunakan Markdown heading (#), cukup gunakan **teks tebal** untuk poin penting.`;
+const systemPrompt = `Kamu adalah AI Smart Tutor Fisika untuk aplikasi RekaFisika AR yang berbasis suara.
+Tugasmu adalah menjelaskan konsep fisika terkait turbin angin.
+BERIKAN JAWABAN SINGKAT, padat, dan jelas (maksimal 2 kalimat) agar nyaman diucapkan oleh asisten suara (Text-to-Speech).
+Sertakan juga nama komponen utama yang relevan (seperti Rotor, Generator, atau Menara) di dalam penjelasanmu.`;
 
-export async function tanyaAITutor(userPrompt, contextData = {}) {
-  // Mode Online dengan Gemini API
+export async function tanyaAITutorVoice(userPrompt) {
+  let responseText = "";
+  
   if (ai && navigator.onLine) {
     try {
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
-        contents: [
-          { role: 'user', parts: [{ text: systemPrompt + "\n\nPertanyaan: " + userPrompt }] }
-        ],
+        contents: [{ role: 'user', parts: [{ text: systemPrompt + "\n\nPertanyaan: " + userPrompt }] }],
         config: { temperature: 0.7 }
       });
-      
       if (response.text) {
-        return { text: response.text, source: 'GEMINI_FREE_API' };
+        responseText = response.text;
       }
     } catch (error) {
       console.warn("Gemini API gagal atau timeout, beralih ke Offline Smart Engine...", error);
     }
   }
 
-  // Mode Offline / Fallback Knowledge Base
-  return {
-    text: getOfflineResponse(userPrompt.toLowerCase(), contextData),
-    source: 'OFFLINE_SMART_ENGINE'
-  };
+  if (!responseText) {
+    responseText = getOfflineResponse(userPrompt.toLowerCase());
+  }
+
+  // Detect component from response or prompt
+  const combinedText = (userPrompt + " " + responseText).toLowerCase();
+  let targetPart = null;
+  if (combinedText.includes('rotor') || combinedText.includes('baling')) {
+    targetPart = 'rotor';
+  } else if (combinedText.includes('generator') || combinedText.includes('faraday') || combinedText.includes('nacelle') || combinedText.includes('elektromagnetik') || combinedText.includes('listrik')) {
+    targetPart = 'generator';
+  } else if (combinedText.includes('menara') || combinedText.includes('tower') || combinedText.includes('tinggi')) {
+    targetPart = 'tower';
+  }
+
+  return { text: responseText, targetPart };
 }
 
-function getOfflineResponse(text, contextData) {
-  if (text.includes('faraday') || text.includes('generator')) {
-    return "Menurut **Hukum Faraday**, perubahan fluks magnetik pada kumparan kawat stator oleh putaran magnet rotor akan menghasilkan gaya gerak listrik (GGL) induksi. Inilah prinsip utama generator turbin angin mengubah putaran mekanik menjadi energi listrik murni.";
+function getOfflineResponse(text) {
+  if (text.includes('faraday') || text.includes('generator') || text.includes('listrik')) {
+    return "Menurut Hukum Faraday, pergerakan magnet di dalam kumparan generator akan menghasilkan arus listrik induksi murni dari putaran mekanik.";
   }
-  if (text.includes('baling') || text.includes('rotor')) {
-    return "Baling-baling (rotor) turbin angin dirancang menggunakan prinsip **Aerodinamika**. Gaya angkat (lift) dari angin memutar baling-baling ini, mengubah energi angin menjadi **Energi Kinetik (E_k = 1/2 m v^2)**.";
+  if (text.includes('baling') || text.includes('rotor') || text.includes('aerodinamika')) {
+    return "Gaya angkat aerodinamis akan memutar rotor turbin, mengubah kecepatan dan tekanan aliran udara menjadi energi kinetik mekanik yang kuat.";
   }
-  if (text.includes('menara') || text.includes('tower')) {
-    return "Menara turbin angin dibangun sangat tinggi berdasarkan profil kecepatan angin logaritmik. Semakin tinggi posisi dari permukaan tanah, semakin cepat dan stabil aliran fluida udara, sehingga **Efisiensi Daya Turbin** meningkat eksponensial.";
+  if (text.includes('menara') || text.includes('tower') || text.includes('tinggi')) {
+    return "Menara penopang harus dibangun sangat tinggi karena kecepatan aliran udara bertambah kuat secara logaritmik semakin jauh dari gesekan permukaan tanah.";
   }
-  return "Konsep yang luar biasa! Fluida udara yang bergerak memiliki massa dan kecepatan, yang menghasilkan energi kinetik. Energi ini ditangkap oleh turbin untuk diubah menjadi listrik yang ramah lingkungan.";
+  return "Turbin angin bekerja secara elegan dengan menangkap energi kinetik dari udara yang bergerak, dan mengubahnya menjadi energi listrik ramah lingkungan.";
 }
 
-// Utility: Pembersih Markdown (Mengubah **teks** menjadi <strong> HTML React)
+// Utility: Pembersih Markdown (Mengubah **teks** menjadi <strong> HTML React bergaya hologram)
 export function formatMarkdownToReact(text) {
   if (!text) return null;
   const paragraphs = text.split('\n').filter(p => p.trim() !== '');
@@ -67,13 +76,12 @@ export function formatMarkdownToReact(text) {
     const parts = paragraph.split(/\*\*(.*?)\*\*/g);
     return React.createElement(
       'p',
-      { key: i, style: { marginBottom: '0.75rem', lineHeight: '1.6' } },
+      { key: i, style: { marginBottom: '0.75rem', lineHeight: '1.5' } },
       parts.map((part, index) => {
         if (index % 2 !== 0) {
-          // Bagian genap di dalam Regex Match adalah isi di dalam **
           return React.createElement(
             'strong',
-            { key: index, style: { color: '#34d399', fontWeight: '700' } },
+            { key: index, style: { color: '#38bdf8', fontWeight: '700', textShadow: '0 0 8px rgba(56, 189, 248, 0.6)' } },
             part
           );
         }
@@ -83,4 +91,20 @@ export function formatMarkdownToReact(text) {
       })
     );
   });
+}
+
+// Layanan Text-to-Speech Native Browser
+export function speakText(text) {
+  if (!window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  
+  // Bersihkan Markdown sebelum dibaca oleh AI Voice
+  const cleanText = text.replace(/\*/g, '').replace(/_/g, '').replace(/#/g, '');
+  
+  const utterance = new SpeechSynthesisUtterance(cleanText);
+  utterance.lang = 'id-ID'; // Bahasa Indonesia
+  utterance.rate = 1.0;     // Kecepatan normal
+  utterance.pitch = 1.1;    // Sedikit melengking futuristik
+  
+  window.speechSynthesis.speak(utterance);
 }
