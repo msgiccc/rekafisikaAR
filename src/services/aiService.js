@@ -14,9 +14,9 @@ if (apiKey && apiKey.trim() !== '') {
 }
 
 const systemPrompt = `Kamu adalah AI Smart Tutor Fisika untuk aplikasi RekaFisika AR yang berbasis suara.
-Tugasmu adalah menjelaskan konsep fisika terkait turbin angin.
+Tugasmu adalah menjelaskan konsep fisika terkait turbin angin energi terbarukan.
 BERIKAN JAWABAN SINGKAT, padat, dan jelas (maksimal 2 kalimat) agar nyaman diucapkan oleh asisten suara (Text-to-Speech).
-Sertakan juga nama komponen utama yang relevan (seperti Rotor, Generator, atau Menara) di dalam penjelasanmu.`;
+Sertakan nama komponen utama (Rotor, Generator, atau Menara) di dalam penjelasanmu.`;
 
 export async function tanyaAITutorVoice(userPrompt) {
   let responseText = "";
@@ -40,7 +40,7 @@ export async function tanyaAITutorVoice(userPrompt) {
     responseText = getOfflineResponse(userPrompt.toLowerCase());
   }
 
-  // Detect component from response or prompt
+  // Pendeteksi Komponen Mesin
   const combinedText = (userPrompt + " " + responseText).toLowerCase();
   let targetPart = null;
   if (combinedText.includes('rotor') || combinedText.includes('baling')) {
@@ -56,15 +56,15 @@ export async function tanyaAITutorVoice(userPrompt) {
 
 function getOfflineResponse(text) {
   if (text.includes('faraday') || text.includes('generator') || text.includes('listrik')) {
-    return "Menurut Hukum Faraday, pergerakan magnet di dalam kumparan generator akan menghasilkan arus listrik induksi murni dari putaran mekanik.";
+    return "Menurut Hukum Faraday, pergerakan magnet di dalam kumparan generator turbin akan menghasilkan arus listrik induksi murni dari putaran mekanik baling-baling.";
   }
   if (text.includes('baling') || text.includes('rotor') || text.includes('aerodinamika')) {
-    return "Gaya angkat aerodinamis akan memutar rotor turbin, mengubah kecepatan dan tekanan aliran udara menjadi energi kinetik mekanik yang kuat.";
+    return "Gaya angkat aerodinamis memutar rotor turbin, menangkap energi angin dan mengubahnya menjadi **energi kinetik mekanik** yang sangat kuat.";
   }
   if (text.includes('menara') || text.includes('tower') || text.includes('tinggi')) {
-    return "Menara penopang harus dibangun sangat tinggi karena kecepatan aliran udara bertambah kuat secara logaritmik semakin jauh dari gesekan permukaan tanah.";
+    return "Menara harus dibangun sangat tinggi karena kecepatan aliran fluida udara bertambah kuat secara eksponensial semakin jauh dari gesekan permukaan tanah.";
   }
-  return "Turbin angin bekerja secara elegan dengan menangkap energi kinetik dari udara yang bergerak, dan mengubahnya menjadi energi listrik ramah lingkungan.";
+  return "Turbin angin bekerja dengan menangkap energi kinetik dari udara yang bergerak, dan mengubahnya menjadi energi listrik ramah lingkungan melalui induksi elektromagnetik.";
 }
 
 // Utility: Pembersih Markdown (Mengubah **teks** menjadi <strong> HTML React bergaya hologram)
@@ -79,6 +79,7 @@ export function formatMarkdownToReact(text) {
       { key: i, style: { marginBottom: '0.75rem', lineHeight: '1.5' } },
       parts.map((part, index) => {
         if (index % 2 !== 0) {
+          // Render teks tebal dengan warna Sci-Fi cyan
           return React.createElement(
             'strong',
             { key: index, style: { color: '#38bdf8', fontWeight: '700', textShadow: '0 0 8px rgba(56, 189, 248, 0.6)' } },
@@ -93,18 +94,18 @@ export function formatMarkdownToReact(text) {
   });
 }
 
-// Layanan Text-to-Speech Native Browser
+// Layanan Text-to-Speech Native Browser (Mengucapkan respon AI)
 export function speakText(text) {
   if (!window.speechSynthesis) return;
   window.speechSynthesis.cancel();
   
-  // Bersihkan Markdown sebelum dibaca oleh AI Voice
+  // Bersihkan Markdown sebelum dibaca
   const cleanText = text.replace(/\*/g, '').replace(/_/g, '').replace(/#/g, '');
   
   const utterance = new SpeechSynthesisUtterance(cleanText);
   utterance.lang = 'id-ID'; // Bahasa Indonesia
-  utterance.rate = 1.0;     // Kecepatan normal
-  utterance.pitch = 1.1;    // Sedikit melengking futuristik
+  utterance.rate = 1.0;
+  utterance.pitch = 1.1; // Nada suara futuristik
   
   window.speechSynthesis.speak(utterance);
 }
