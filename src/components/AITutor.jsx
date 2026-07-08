@@ -1,13 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { tanyaAITutor } from '../services/aiService';
 
-const AITutor = () => {
+const AITutor = ({ selectedPart, aiResponse, loading, onSendMessage }) => {
   const [history, setHistory] = useState([
-    { sender: 'ai', text: 'Halo! Saya RekaFisika AI. Ada yang ingin kamu tanyakan tentang konsep energi terbarukan hari ini?' }
+    { sender: 'ai', text: 'Halo! Saya RekaFisika AI. Klik komponen pada model 3D di layar sebelah, atau ketik pertanyaanmu di bawah untuk mempelajari fisika energi terbarukan!' }
   ]);
   const [input, setInput] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [aiStatus, setAiStatus] = useState('offline');
   const chatEndRef = useRef(null);
 
   const quickChips = [
@@ -24,33 +21,28 @@ const AITutor = () => {
     scrollToBottom();
   }, [history, loading]);
 
-  const handleSend = async (text) => {
-    if (!text.trim()) return;
-    
-    setHistory(prev => [...prev, { sender: 'user', text }]);
-    setInput('');
-    setLoading(true);
-    
-    try {
-      const response = await tanyaAITutor(text);
-      setAiStatus(response.source === 'GEMINI_FREE_API' ? 'online' : 'offline');
-      setHistory(prev => [...prev, { sender: 'ai', text: response.text }]);
-    } catch (error) {
-      console.error(error);
-      setHistory(prev => [...prev, { sender: 'ai', text: "Maaf, terjadi kesalahan pada sistem AI." }]);
-    } finally {
-      setLoading(false);
+  // Effect to append new AI response from AR trigger or manual trigger
+  useEffect(() => {
+    if (aiResponse && aiResponse.text) {
+      setHistory(prev => [...prev, { sender: 'ai', text: aiResponse.text }]);
     }
+  }, [aiResponse]);
+
+  const handleSend = () => {
+    if (!input.trim()) return;
+    setHistory(prev => [...prev, { sender: 'user', text: input }]);
+    onSendMessage(input);
+    setInput('');
   };
 
-  // Utility to parse markdown bold and newlines safely
-  const renderFormattedAIResponse = (text) => {
+  // Utility to parse markdown bold and newlines safely without raw asterisks
+  const formatAIResponse = (text) => {
     // Split by newlines first
-    const paragraphs = text.split('\\n').filter(p => p.trim() !== '');
+    const paragraphs = text.split('\n').filter(p => p.trim() !== '');
     
     return paragraphs.map((paragraph, i) => {
       // Split by ** to find bold sections
-      const parts = paragraph.split(/\\*\\*(.*?)\\*\\*/g);
+      const parts = paragraph.split(/\*\*(.*?)\*\*/g);
       
       return (
         <p key={i} style={{ marginBottom: '0.75rem' }}>
@@ -59,9 +51,8 @@ const AITutor = () => {
             if (index % 2 !== 0) {
               return <strong key={index} style={{ color: '#059669', fontWeight: '700' }}>{part}</strong>;
             }
-            // Further process single * for italic if needed, but the prompt just asked to remove * leakages.
-            // Let's remove any stray single asterisks that might leak.
-            const cleanPart = part.replace(/\\*/g, '');
+            // Remove any stray single asterisks
+            const cleanPart = part.replace(/\*/g, '');
             return <span key={index}>{cleanPart}</span>;
           })}
         </p>
@@ -73,17 +64,22 @@ const AITutor = () => {
     <div className="tutor-card">
       <div className="tutor-header">
         <h2>🤖 RekaFisika AI Tutor</h2>
-        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-          <span className={`ai-status-badge ${aiStatus}`}>
-            {aiStatus === 'online' ? '⚡ Powered by Google Gemini AI (Free Tier)' : '🛡️ Offline Smart Engine'}
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', flexDirection: 'column' }}>
+          <span className="ai-status-badge online">
+            ⚡ Powered by Google Gemini AI (Free Tier)
           </span>
+          {selectedPart && (
+            <span className="ar-integration-badge">
+              🎯 Mengintegrasikan AR: Sedang membahas {selectedPart}...
+            </span>
+          )}
         </div>
       </div>
       
       <div className="tutor-chat-area">
         {history.map((msg, index) => (
           <div key={index} className={`chat-bubble ${msg.sender}`}>
-            {msg.sender === 'ai' ? renderFormattedAIResponse(msg.text) : msg.text}
+            {msg.sender === 'ai' ? formatAIResponse(msg.text) : msg.text}
           </div>
         ))}
         {loading && (
@@ -101,7 +97,10 @@ const AITutor = () => {
             <button 
               key={index} 
               className="chip"
-              onClick={() => handleSend(chip)}
+              onClick={() => {
+                setHistory(prev => [...prev, { sender: 'user', text: chip }]);
+                onSendMessage(chip);
+              }}
               disabled={loading}
             >
               {chip}
@@ -115,11 +114,11 @@ const AITutor = () => {
             placeholder="Ketik pertanyaan fisikamu di sini..."
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && handleSend(input)}
+            onKeyPress={(e) => e.key === 'Enter' && handleSend()}
             disabled={loading}
           />
           <button 
-            onClick={() => handleSend(input)}
+            onClick={handleSend}
             disabled={loading}
           >
             Kirim
