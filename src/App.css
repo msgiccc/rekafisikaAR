@@ -164,20 +164,68 @@ h1, h2, h3, h4 {
   font-weight: 600;
 }
 
+/* AR Viewer Header & Buttons */
 .ar-header {
-  padding: 1.5rem;
+  padding: 1rem 1.5rem;
   border-bottom: 1px solid #e2e8f0;
 }
 
-.ar-header h2 {
-  font-size: 1.5rem;
-  margin-bottom: 0.5rem;
+.ar-header-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
 }
 
-.ar-header p {
-  color: var(--text-secondary);
-  font-size: 0.875rem;
+.ar-header h2 {
+  font-size: 1.25rem;
+  margin-bottom: 0.25rem;
 }
+
+.ar-badge-focus {
+  display: inline-block;
+  background-color: var(--deep-navy);
+  color: var(--white);
+  padding: 0.25rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.ar-header-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.btn-gamify {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: white;
+  border: none;
+  border-radius: 9999px;
+  padding: 0.5rem 1rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 6px -1px rgba(245, 158, 11, 0.4);
+  transition: transform 0.2s;
+}
+.btn-gamify:hover { transform: scale(1.05); }
+
+.btn-xray {
+  background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+  color: white;
+  border: none;
+  border-radius: 9999px;
+  padding: 0.5rem 1rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 6px -1px rgba(139, 92, 246, 0.4);
+  transition: transform 0.2s;
+}
+.btn-xray:hover { transform: scale(1.05); }
 
 .btn-toggle-hud {
   background-color: #e2e8f0;
@@ -190,47 +238,60 @@ h1, h2, h3, h4 {
   cursor: pointer;
   transition: var(--transition-smooth);
 }
-
-.btn-toggle-hud:hover {
-  background-color: #cbd5e1;
-}
+.btn-toggle-hud:hover { background-color: #cbd5e1; }
 
 .ar-model-container {
   flex: 1;
   width: 100%;
   position: relative;
-  /* Diberikan min-height agar tidak collapse di HP */
   min-height: 500px; 
 }
 
 model-viewer {
   --poster-color: transparent;
-  /* Style ini sudah dilindungi lewat inline style, tapi diletakkan juga di sini */
   width: 100%;
   height: 100%;
 }
 
-.ar-button {
-  background-color: var(--emerald-green);
-  color: white;
-  border-radius: 9999px;
-  border: none;
+/* Physics Controller Overlay */
+.physics-controller-overlay {
   position: absolute;
-  bottom: 24px;
+  bottom: 80px;
   left: 50%;
   transform: translateX(-50%);
-  padding: 12px 24px;
-  font-weight: 600;
-  box-shadow: var(--shadow-md);
-  cursor: pointer;
-  transition: var(--transition-smooth);
-  font-family: inherit;
-  white-space: nowrap;
-  z-index: 10;
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  padding: 0.75rem 1.5rem;
+  border-radius: 9999px;
+  border: 1px solid rgba(255,255,255,0.2);
+  color: white;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+  width: 90%;
+  max-width: 400px;
 }
 
-.ar-button:hover {
-  background-color: var(--emerald-green-hover);
+.slider-container {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.slider-container label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-align: center;
+  color: #38bdf8;
+}
+
+.slider-container input[type=range] {
+  width: 100%;
+  accent-color: var(--emerald-green);
+  cursor: pointer;
 }
 
 /* Hologram HUD AI in AR */
@@ -244,14 +305,41 @@ model-viewer {
   color: var(--white);
   padding: 1rem;
   width: 280px;
-  max-width: 80vw; /* Responsif di layar sempit */
+  max-width: 80vw;
   font-size: 0.875rem;
   transform: translateY(-50%) scale(1);
   animation: hologramFloat 3s ease-in-out infinite, hologramFadeIn 0.5s ease-out;
-  pointer-events: none; /* Biar tidak ganggu orbit 3D */
+  pointer-events: none;
+}
+
+/* Animations for Gamification */
+.glow-correct {
+  border-color: #34d399;
+  box-shadow: 0 0 25px rgba(52, 211, 153, 0.8);
+  animation: hologramFloat 3s infinite, pulseGlow 1s ease-out;
+}
+.shake-wrong {
+  border-color: #ef4444;
+  box-shadow: 0 0 25px rgba(239, 68, 68, 0.8);
+  animation: shakeX 0.5s;
+}
+
+@keyframes pulseGlow {
+  0% { transform: translateY(-50%) scale(1); box-shadow: 0 0 15px rgba(52, 211, 153, 0.5); }
+  50% { transform: translateY(-50%) scale(1.05); box-shadow: 0 0 40px rgba(52, 211, 153, 1); }
+  100% { transform: translateY(-50%) scale(1); box-shadow: 0 0 25px rgba(52, 211, 153, 0.8); }
+}
+
+@keyframes shakeX {
+  0%, 100% { transform: translateY(-50%) translateX(0); }
+  25% { transform: translateY(-50%) translateX(-10px); }
+  75% { transform: translateY(-50%) translateX(10px); }
 }
 
 .hud-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   font-size: 0.75rem;
   font-weight: 700;
   color: var(--emerald-green);
@@ -262,15 +350,24 @@ model-viewer {
   letter-spacing: 0.05em;
 }
 
-.hud-body {
-  line-height: 1.5;
+.score-badge {
+  background: #f59e0b;
+  color: white;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
 }
 
-.hud-thinking {
-  color: #38bdf8;
-  font-style: italic;
-  animation: pulse 1.5s infinite;
+.hud-power-output {
+  margin-top: 0.75rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed rgba(255,255,255,0.2);
+  color: #fde047;
+  font-size: 0.8rem;
 }
+
+.hud-body { line-height: 1.5; }
+.hud-thinking { color: #38bdf8; font-style: italic; animation: pulse 1.5s infinite; }
 
 @keyframes hologramFadeIn {
   from { opacity: 0; transform: translateY(-40%) scale(0.9); }
