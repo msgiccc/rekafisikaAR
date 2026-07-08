@@ -6,16 +6,19 @@ const ARViewer = () => {
 
   // Default Koordinat Hotspots
   const [hotspotPositions, setHotspotPositions] = useState({
-    rotor: { pos: "0m 2.4m 0.4m", norm: "0m 0m 1m" },
-    generator: { pos: "0m 2.4m -0.3m", norm: "0m 1m 0m" },
+    rotor: { pos: "0m 2.5m 0.5m", norm: "0m 0m 1m" },
+    generator: { pos: "0m 2.5m -0.3m", norm: "0m 1m 0m" },
     tower: { pos: "0m 1.2m 0m", norm: "1m 0m 0m" }
   });
 
-  // Popups State (True In-AR World-Space Holograms)
-  const [popups, setPopups] = useState({
-    rotor: { isOpen: false, text: '', formula: 'E_k = ½ m v²', title: 'Rotor' },
-    generator: { isOpen: false, text: '', formula: 'Ɛ = -N (dΦ / dt)', title: 'Generator' },
-    tower: { isOpen: false, text: '', formula: 'v(h) = v_ref * (h / h_ref)^α', title: 'Menara' }
+  // True World-Space Holographic Pop-Up State (Single Dynamic Slot)
+  const [activePopup, setActivePopup] = useState({
+    isOpen: false,
+    title: '',
+    text: '',
+    formula: '',
+    position: '0m 0m 0m',
+    normal: '0m 1m 0m'
   });
 
   // UI States
@@ -27,11 +30,10 @@ const ARViewer = () => {
   const defaultOrbit = "0deg 75deg 3.5m";
   const defaultTarget = "0m 1.5m 0m";
 
-  // Coordinates data for Camera Zoom
-  const cameraData = {
-    rotor: { target: '0m 2.4m 0m', orbit: '20deg 75deg 2.5m' },
-    generator: { target: '0m 2.4m 0m', orbit: '-150deg 60deg 2.5m' },
-    tower: { target: '0m 1.2m 0m', orbit: '45deg 85deg 3.5m' }
+  const partDetails = {
+    rotor: { title: 'Rotor', formula: 'E_k = ½ m v²', camTarget: '0m 2.5m 0m', camOrbit: '20deg 75deg 2.5m' },
+    generator: { title: 'Generator', formula: 'Ɛ = -N (dΦ / dt)', camTarget: '0m 2.5m 0m', camOrbit: '-150deg 60deg 2.5m' },
+    tower: { title: 'Menara', formula: 'v(h) = v_ref * (h / h_ref)^α', camTarget: '0m 1.2m 0m', camOrbit: '45deg 85deg 3.5m' }
   };
 
   const showToast = (msg) => {
@@ -40,11 +42,7 @@ const ARViewer = () => {
   };
 
   const resetView = () => {
-    setPopups({
-      rotor: { ...popups.rotor, isOpen: false },
-      generator: { ...popups.generator, isOpen: false },
-      tower: { ...popups.tower, isOpen: false }
-    });
+    setActivePopup(prev => ({ ...prev, isOpen: false }));
     if (modelRef.current) {
       modelRef.current.cameraTarget = defaultTarget;
       modelRef.current.cameraOrbit = defaultOrbit;
@@ -52,39 +50,48 @@ const ARViewer = () => {
     if (window.speechSynthesis) window.speechSynthesis.cancel();
   };
 
-  const activatePart = (partName, aiText) => {
-    const cam = cameraData[partName];
-    if (modelRef.current && cam) {
-      modelRef.current.cameraTarget = cam.target;
-      modelRef.current.cameraOrbit = cam.orbit;
+  const activatePart = (partKey, aiText) => {
+    const details = partDetails[partKey];
+    if (modelRef.current && details) {
+      modelRef.current.cameraTarget = details.camTarget;
+      modelRef.current.cameraOrbit = details.camOrbit;
     }
 
-    setPopups(prev => {
-      const newPopups = {
-        rotor: { ...prev.rotor, isOpen: false },
-        generator: { ...prev.generator, isOpen: false },
-        tower: { ...prev.tower, isOpen: false }
-      };
-      if (newPopups[partName]) {
-        newPopups[partName].isOpen = true;
-        newPopups[partName].text = aiText;
+    if (details) {
+      // Calculate dynamic position (shift X by 0.7m so it doesn't block the model)
+      const basePos = hotspotPositions[partKey].pos;
+      const parts = basePos.replace(/m/g, '').split(' ').map(parseFloat);
+      let shiftedPos = basePos;
+      
+      if (parts.length === 3) {
+        // Shift X depending on component to look best
+        const shiftX = partKey === 'generator' ? -0.8 : 0.8;
+        shiftedPos = `${(parts[0] + shiftX).toFixed(3)}m ${(parts[1] + 0.2).toFixed(3)}m ${(parts[2]).toFixed(3)}m`;
       }
-      return newPopups;
-    });
+
+      setActivePopup({
+        isOpen: true,
+        title: details.title,
+        text: aiText,
+        formula: details.formula,
+        position: shiftedPos,
+        normal: hotspotPositions[partKey].norm
+      });
+    }
   };
 
-  const handleManualHotspotClick = async (partName, triggerText) => {
+  const handleManualHotspotClick = async (partKey, triggerText) => {
     resetView();
-    setVoiceStatus(`AI memindai ${partName}...`);
-    activatePart(partName, "⚡ Mengambil data fisika dari satelit AI...");
+    setVoiceStatus(`AI memindai ${partDetails[partKey].title}...`);
+    activatePart(partKey, "⚡ Mengambil data fisika dari satelit AI...");
 
     try {
       const response = await tanyaAITutorVoice(triggerText);
-      activatePart(partName, response.text);
+      activatePart(partKey, response.text);
       speakText(response.text);
       setVoiceStatus('');
     } catch (error) {
-      activatePart(partName, "Koneksi ke AI terputus. Silakan coba lagi.");
+      activatePart(partKey, "Koneksi ke AI terputus. Silakan coba lagi.");
       setVoiceStatus('');
     }
   };
@@ -103,7 +110,7 @@ const ARViewer = () => {
     recognition.onstart = () => {
       resetView();
       setIsListening(true);
-      setVoiceStatus('🎙️ Mendengarkan suara Anda...');
+      setVoiceStatus('🎙️ Mendengarkan...');
     };
 
     recognition.onresult = async (event) => {
@@ -118,10 +125,8 @@ const ARViewer = () => {
         if (response.targetPart) {
           activatePart(response.targetPart, response.text);
         } else {
-          setPopups(prev => ({
-            ...prev,
-            tower: { ...prev.tower, isOpen: true, text: response.text }
-          }));
+          // Default to tower if no specific part detected
+          activatePart('tower', response.text);
         }
         setVoiceStatus('');
       } catch (error) {
@@ -143,7 +148,7 @@ const ARViewer = () => {
     recognition.start();
   };
 
-  // Solusi Hotspot Meleset: Live Instant-Jump Calibration
+  // Live Instant-Jump Calibration
   const handleModelClick = (e) => {
     if (!isCalibrating || !modelRef.current) return;
     const viewer = modelRef.current;
@@ -154,39 +159,28 @@ const ARViewer = () => {
       const posStr = `${hit.position.x.toFixed(3)}m ${hit.position.y.toFixed(3)}m ${hit.position.z.toFixed(3)}m`;
       const normStr = `${hit.normal.x.toFixed(3)}m ${hit.normal.y.toFixed(3)}m ${hit.normal.z.toFixed(3)}m`;
       
-      // Instant Jump logic: langsung geser titik Rotor ke posisi klik!
+      // Auto Jump! (Updating Rotor as primary test)
       setHotspotPositions(prev => ({
         ...prev,
-        rotor: { pos: posStr, norm: normStr } // Menggeser hotspot Rotor sebagai contoh utama kalibrasi
+        rotor: { pos: posStr, norm: normStr } 
       }));
       
-      // Auto-Clipboard Copy
+      // Auto Copy
       navigator.clipboard.writeText(`data-position="${posStr}" data-normal="${normStr}"`);
-      showToast("✅ Koordinat 100% pas berhasil disalin ke Clipboard! (Titik Rotor digeser sementara)");
+      showToast("✅ Koordinat 100% pas disalin ke Clipboard! (Titik Rotor digeser sementara)");
     }
-  };
-
-  // Fungsi utilitas untuk menghitung posisi World-Space Pop-up agar melayang di samping Hotspot
-  // Kita meniru logika posisi dengan menambah sedikit sumbu X dan Y dari koordinat hotspot
-  const getOffsetPosition = (posStr, offsetX, offsetY, offsetZ) => {
-    if (!posStr) return "0m 0m 0m";
-    const parts = posStr.replace(/m/g, '').split(' ').map(parseFloat);
-    if (parts.length === 3) {
-      return `${(parts[0] + offsetX).toFixed(3)}m ${(parts[1] + offsetY).toFixed(3)}m ${(parts[2] + offsetZ).toFixed(3)}m`;
-    }
-    return posStr;
   };
 
   return (
     <div className="ar-fullscreen-container">
-      {/* 1. Header (TIDAK MASUK KAMERA AR, hanya di mode web) */}
+      {/* 1. Header Web Overlay */}
       <div className="ar-overlay-header">
-        <h1 className="ar-title">RekaFisika AR <span>WebXR Edition</span></h1>
+        <h1 className="ar-title">RekaFisika AR <span>Mobile WebXR Edition</span></h1>
         <button 
           className={`btn-calibration ${isCalibrating ? 'active' : ''}`}
           onClick={() => setIsCalibrating(!isCalibrating)}
         >
-          {isCalibrating ? '🛑 Tutup Kalibrasi' : '🛠️ Mode Kalibrasi Posisi'}
+          {isCalibrating ? '🛑 Tutup Kalibrasi' : '🛠️ Kalibrasi Posisi'}
         </button>
       </div>
 
@@ -218,9 +212,9 @@ const ARViewer = () => {
         shadow-intensity="2" shadow-softness="0.8" exposure="1.15" environment-image="neutral"
         camera-orbit={defaultOrbit} camera-target={defaultTarget}
         onClick={handleModelClick}
-        style={{ width: "100%", height: "85vh", minHeight: "550px", backgroundColor: "#090d16", borderRadius: "20px", position: "relative", overflow: "hidden" }}
+        style={{ width: "100%", height: "100dvh", backgroundColor: "#090d16", position: "relative", outline: "none" }}
       >
-        {/* SELURUH ELEMEN INTERAKTIF WAJIB MENJADI CHILD <model-viewer> (WebXR DOM Overlay) */}
+        {/* SEMUA ELEMEN INI SEKARANG BERADA DI DALAM KAMERA AR HP! */}
 
         {/* --- ROTOR --- */}
         <button 
@@ -232,23 +226,6 @@ const ARViewer = () => {
           <div className="hotspot-dot"></div>
         </button>
 
-        {/* True World-Space Hologram Popup (Rotor) - Melayang 0.8m di sebelah kanan rotor */}
-        {popups.rotor.isOpen && (
-          <div 
-            slot="hotspot-popup-rotor" 
-            data-position={getOffsetPosition(hotspotPositions.rotor.pos, 0.8, 0.2, 0)} 
-            data-normal={hotspotPositions.rotor.norm} 
-            className="in-ar-hologram-card"
-          >
-            <div className="ws-card-header">
-              <h3>⚡ {popups.rotor.title}</h3>
-              <button onClick={(e) => { e.stopPropagation(); resetView(); }}>✕</button>
-            </div>
-            <div className="ws-card-body">{formatMarkdownToReact(popups.rotor.text)}</div>
-            <div className="ws-card-formula">{popups.rotor.formula}</div>
-          </div>
-        )}
-
         {/* --- GENERATOR --- */}
         <button 
           slot="hotspot-generator" data-position={hotspotPositions.generator.pos} data-normal={hotspotPositions.generator.norm} 
@@ -258,22 +235,6 @@ const ARViewer = () => {
           <div className="hotspot-ring"></div>
           <div className="hotspot-dot"></div>
         </button>
-
-        {popups.generator.isOpen && (
-          <div 
-            slot="hotspot-popup-generator" 
-            data-position={getOffsetPosition(hotspotPositions.generator.pos, -0.8, 0.3, 0)} 
-            data-normal={hotspotPositions.generator.norm} 
-            className="in-ar-hologram-card"
-          >
-            <div className="ws-card-header">
-              <h3>⚡ {popups.generator.title}</h3>
-              <button onClick={(e) => { e.stopPropagation(); resetView(); }}>✕</button>
-            </div>
-            <div className="ws-card-body">{formatMarkdownToReact(popups.generator.text)}</div>
-            <div className="ws-card-formula">{popups.generator.formula}</div>
-          </div>
-        )}
 
         {/* --- TOWER --- */}
         <button 
@@ -285,28 +246,29 @@ const ARViewer = () => {
           <div className="hotspot-dot"></div>
         </button>
 
-        {popups.tower.isOpen && (
+        {/* --- TRUE WORLD-SPACE HOLOGRAPHIC POPUP (SINGLE DYNAMIC SLOT) --- */}
+        {activePopup.isOpen && (
           <div 
-            slot="hotspot-popup-tower" 
-            data-position={getOffsetPosition(hotspotPositions.tower.pos, 1.0, 0.2, 0)} 
-            data-normal={hotspotPositions.tower.norm} 
+            slot="hotspot-popup-ai" 
+            data-position={activePopup.position} 
+            data-normal={activePopup.normal} 
             className="in-ar-hologram-card"
           >
             <div className="ws-card-header">
-              <h3>⚡ {popups.tower.title}</h3>
+              <h3>⚡ {activePopup.title}</h3>
               <button onClick={(e) => { e.stopPropagation(); resetView(); }}>✕</button>
             </div>
-            <div className="ws-card-body">{formatMarkdownToReact(popups.tower.text)}</div>
-            <div className="ws-card-formula">{popups.tower.formula}</div>
+            <div className="ws-card-body">{formatMarkdownToReact(activePopup.text)}</div>
+            <div className="ws-card-formula">{activePopup.formula}</div>
           </div>
         )}
 
-        {/* --- VOICE AI CO-PILOT HUD (DOM OVERLAY) --- */}
+        {/* --- VOICE AI CO-PILOT HUD --- */}
         <div className="voice-hud-container" slot="interaction-prompt">
           <button 
             className={`voice-hud-btn ${isListening ? 'listening' : ''}`}
             onClick={(e) => { e.stopPropagation(); startListening(); }}
-            title="🎙️ RekaFisika Voice Co-Pilot"
+            title="🎙️ Tanya AI (Voice)"
           >
             <div className="mic-icon">🎙️</div>
             {isListening && <div className="audio-wave-rings"></div>}
