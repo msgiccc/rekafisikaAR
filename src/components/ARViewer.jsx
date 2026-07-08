@@ -6,9 +6,9 @@ const ARViewer = () => {
 
   // Default Koordinat Hotspots
   const [hotspotPositions, setHotspotPositions] = useState({
-    rotor: { pos: "0m 2.5m 0.5m", norm: "0m 0m 1m" },
-    generator: { pos: "0m 2.5m -0.3m", norm: "0m 1m 0m" },
-    tower: { pos: "0m 1.2m 0m", norm: "1m 0m 0m" }
+    rotor: { pos: "0m 5.5m 0.5m", norm: "0m 0m 1m" },
+    generator: { pos: "0m 5.5m -0.3m", norm: "0m 1m 0m" },
+    tower: { pos: "0m 5.2m 0m", norm: "1m 0m 0m" }
   });
 
   // True World-Space Holographic Pop-Up State (Single Dynamic Slot)
@@ -264,7 +264,7 @@ const ARViewer = () => {
         )}
 
         {/* --- VOICE AI CO-PILOT HUD --- */}
-        <div className="voice-hud-container" slot="interaction-prompt">
+        <div className="voice-hud-container">
           <button 
             className={`voice-hud-btn ${isListening ? 'listening' : ''}`}
             onClick={(e) => { e.stopPropagation(); startListening(); }}
