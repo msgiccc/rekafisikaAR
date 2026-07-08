@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { tanyaAITutor } from '../services/aiService';
 
-const AITutor = ({ triggerMessage, onKeywordMatch }) => {
+const AITutor = ({ triggerMessage, onKeywordMatch, setAiHudContent, setIsAiThinking }) => {
   const [history, setHistory] = useState([
     { sender: 'ai', text: 'Halo! Saya RekaFisika AI. Ada yang ingin kamu tanyakan tentang konsep energi terbarukan hari ini?' }
   ]);
@@ -39,6 +39,10 @@ const AITutor = ({ triggerMessage, onKeywordMatch }) => {
     setInput('');
     setLoading(true);
     
+    // Update AR HUD State
+    if (setIsAiThinking) setIsAiThinking(true);
+    if (setAiHudContent) setAiHudContent('');
+    
     try {
       const response = await tanyaAITutor(text);
       
@@ -58,11 +62,20 @@ const AITutor = ({ triggerMessage, onKeywordMatch }) => {
         onKeywordMatch('menara');
       }
 
+      // Update AR HUD Content (ambil paragraf pertama atau pangkas agar singkat)
+      if (setAiHudContent) {
+        const sentences = aiResponseText.split(/(?<=[.!?])\s+/);
+        const shortSummary = sentences.slice(0, 3).join(' '); // Maksimal 3 kalimat
+        setAiHudContent(shortSummary);
+      }
+
     } catch (error) {
       console.error(error);
       setHistory(prev => [...prev, { sender: 'ai', text: "Maaf, terjadi kesalahan pada sistem AI." }]);
+      if (setAiHudContent) setAiHudContent("Kesalahan koneksi AI.");
     } finally {
       setLoading(false);
+      if (setIsAiThinking) setIsAiThinking(false);
     }
   };
 
@@ -81,7 +94,7 @@ const AITutor = ({ triggerMessage, onKeywordMatch }) => {
       
       <div className="tutor-chat-area">
         <div className="ar-connection-indicator">
-          <span>🔗</span> Terhubung langsung dengan AR Engine
+          <span>🔗</span> Terhubung langsung dengan AR Engine & Hologram HUD
         </div>
 
         {history.map((msg, index) => (

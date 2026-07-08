@@ -154,6 +154,16 @@ h1, h2, h3, h4 {
   flex-direction: column;
 }
 
+.ar-https-banner {
+  background-color: #fffbeb;
+  color: #b45309;
+  font-size: 0.75rem;
+  padding: 0.5rem 1rem;
+  text-align: center;
+  border-bottom: 1px solid #fde68a;
+  font-weight: 600;
+}
+
 .ar-header {
   padding: 1.5rem;
   border-bottom: 1px solid #e2e8f0;
@@ -169,17 +179,35 @@ h1, h2, h3, h4 {
   font-size: 0.875rem;
 }
 
+.btn-toggle-hud {
+  background-color: #e2e8f0;
+  color: var(--deep-navy);
+  border: none;
+  border-radius: 9999px;
+  padding: 0.5rem 1rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+}
+
+.btn-toggle-hud:hover {
+  background-color: #cbd5e1;
+}
+
 .ar-model-container {
   flex: 1;
-  min-height: 450px;
-  background-color: #f8fafc;
+  width: 100%;
   position: relative;
+  /* Diberikan min-height agar tidak collapse di HP */
+  min-height: 500px; 
 }
 
 model-viewer {
+  --poster-color: transparent;
+  /* Style ini sudah dilindungi lewat inline style, tapi diletakkan juga di sini */
   width: 100%;
   height: 100%;
-  --poster-color: transparent;
 }
 
 .ar-button {
@@ -198,10 +226,60 @@ model-viewer {
   transition: var(--transition-smooth);
   font-family: inherit;
   white-space: nowrap;
+  z-index: 10;
 }
 
 .ar-button:hover {
   background-color: var(--emerald-green-hover);
+}
+
+/* Hologram HUD AI in AR */
+.ar-hologram-hud {
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--emerald-green);
+  box-shadow: 0 0 15px rgba(16, 185, 129, 0.5);
+  border-radius: var(--radius-md);
+  color: var(--white);
+  padding: 1rem;
+  width: 280px;
+  max-width: 80vw; /* Responsif di layar sempit */
+  font-size: 0.875rem;
+  transform: translateY(-50%) scale(1);
+  animation: hologramFloat 3s ease-in-out infinite, hologramFadeIn 0.5s ease-out;
+  pointer-events: none; /* Biar tidak ganggu orbit 3D */
+}
+
+.hud-header {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--emerald-green);
+  text-transform: uppercase;
+  margin-bottom: 0.5rem;
+  border-bottom: 1px solid rgba(16, 185, 129, 0.3);
+  padding-bottom: 0.25rem;
+  letter-spacing: 0.05em;
+}
+
+.hud-body {
+  line-height: 1.5;
+}
+
+.hud-thinking {
+  color: #38bdf8;
+  font-style: italic;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes hologramFadeIn {
+  from { opacity: 0; transform: translateY(-40%) scale(0.9); }
+  to { opacity: 1; transform: translateY(-50%) scale(1); }
+}
+
+@keyframes hologramFloat {
+  0%, 100% { transform: translateY(-50%) }
+  50% { transform: translateY(-52%) }
 }
 
 /* AR Hotspots */

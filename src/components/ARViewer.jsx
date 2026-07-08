@@ -1,7 +1,8 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
-const ARViewer = ({ cameraTarget, onHotspotClick }) => {
+const ARViewer = ({ cameraTarget, onHotspotClick, aiHudContent, isAiThinking }) => {
   const modelRef = useRef(null);
+  const [showHud, setShowHud] = useState(true);
 
   // AR to AI: Effect saat prop cameraTarget berubah dari AI
   useEffect(() => {
@@ -28,12 +29,24 @@ const ARViewer = ({ cameraTarget, onHotspotClick }) => {
 
   return (
     <div className="ar-card">
-      <div className="ar-header">
-        <h2>Mekanika Fisika Turbin Angin & Konversi Energi</h2>
-        <p>
-          Turbin angin mengubah energi kinetik angin menjadi listrik.
-          Rumus dasar: <strong>E<sub>k</sub> = ½ m v²</strong>
-        </p>
+      <div className="ar-https-banner">
+        💡 Info Demo HP: Agar fitur kamera WebAR aktif di HP (Android/iOS), pastikan web ini dibuka melalui link HTTPS (seperti Netlify / Vercel / Ngrok), bukan HTTP IP lokal.
+      </div>
+      <div className="ar-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <h2>Mekanika Fisika Turbin Angin & Konversi Energi</h2>
+          <p>
+            Turbin angin mengubah energi kinetik angin menjadi listrik.
+            Rumus dasar: <strong>E<sub>k</sub> = ½ m v²</strong>
+          </p>
+        </div>
+        <button 
+          className="btn-toggle-hud" 
+          onClick={() => setShowHud(!showHud)}
+          title="Sembunyikan/Tampilkan Panel Hologram AI"
+        >
+          {showHud ? '👁️ Sembunyikan HUD' : '👁️ Tampilkan HUD'}
+        </button>
       </div>
       
       <div className="ar-model-container">
@@ -48,7 +61,35 @@ const ARViewer = ({ cameraTarget, onHotspotClick }) => {
           ar-modes="webxr scene-viewer quick-look"
           shadow-intensity="1"
           interaction-prompt="auto"
+          style={{ 
+            width: "100%", 
+            minHeight: "500px", 
+            height: "65vh", 
+            backgroundColor: "#0f172a", 
+            borderRadius: "0 0 16px 16px", 
+            position: "relative", 
+            overflow: "hidden" 
+          }}
         >
+          {/* AI Hologram HUD */}
+          {showHud && (isAiThinking || aiHudContent) && (
+            <div 
+              slot="hotspot-ai-hud" 
+              data-position="-0.8 1.5 0" 
+              data-normal="0 1 0" 
+              className="ar-hologram-hud"
+            >
+              <div className="hud-header">🤖 AI HUD Analysis</div>
+              <div className="hud-body">
+                {isAiThinking ? (
+                  <span className="hud-thinking">🤖 AI Menganalisis Komponen...</span>
+                ) : (
+                  <p>{aiHudContent}</p>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Hotspot 1: Rotor / Baling-baling */}
           <button 
             slot="hotspot-rotor" 

@@ -9,9 +9,11 @@ import Footer from './components/Footer';
 function App() {
   const [aiTriggerMessage, setAiTriggerMessage] = useState('');
   const [arCameraTarget, setArCameraTarget] = useState('');
+  const [aiHudContent, setAiHudContent] = useState('');
+  const [isAiThinking, setIsAiThinking] = useState(false);
 
   const handleARClick = (keyword) => {
-    setAiTriggerMessage(`Jelaskan tentang ${keyword} pada turbin angin.`);
+    setAiTriggerMessage(`Jelaskan tentang ${keyword} pada turbin angin secara singkat.`);
   };
 
   const handleAIKeyword = (keyword) => {
@@ -26,10 +28,14 @@ function App() {
         <ARViewer 
           cameraTarget={arCameraTarget} 
           onHotspotClick={handleARClick} 
+          aiHudContent={aiHudContent}
+          isAiThinking={isAiThinking}
         />
         <AITutor 
           triggerMessage={aiTriggerMessage} 
           onKeywordMatch={handleAIKeyword} 
+          setAiHudContent={setAiHudContent}
+          setIsAiThinking={setIsAiThinking}
         />
       </main>
       <Footer />
