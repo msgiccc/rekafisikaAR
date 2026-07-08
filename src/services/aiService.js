@@ -94,18 +94,33 @@ export function formatMarkdownToReact(text) {
   });
 }
 
-// Layanan Text-to-Speech Native Browser (Mengucapkan respon AI)
+// Layanan Text-to-Speech Native Browser
 export function speakText(text) {
   if (!window.speechSynthesis) return;
   window.speechSynthesis.cancel();
   
-  // Bersihkan Markdown sebelum dibaca
   const cleanText = text.replace(/\*/g, '').replace(/_/g, '').replace(/#/g, '');
-  
   const utterance = new SpeechSynthesisUtterance(cleanText);
-  utterance.lang = 'id-ID'; // Bahasa Indonesia
-  utterance.rate = 1.0;
-  utterance.pitch = 1.1; // Nada suara futuristik
+  
+  // ==========================================
+  // PENGATURAN SUARA AI (BISA ANDA UBAH DI SINI)
+  // ==========================================
+  utterance.lang = 'id-ID'; 
+  utterance.rate = 1.0;  // Kecepatan membaca (0.5 lambat, 1.0 normal, 1.5 cepat)
+  utterance.pitch = 1.1; // Nada suara (0.1 suara berat/laki-laki, 1.0 normal, 2.0 suara kecil/kartun)
+
+  // Mencoba memilih jenis suara (Voice) yang berbeda jika tersedia di perangkat
+  const voices = window.speechSynthesis.getVoices();
+  const idVoices = voices.filter(v => v.lang.includes('id'));
+  
+  if (idVoices.length > 0) {
+    // Menggunakan suara default Indonesia
+    utterance.voice = idVoices[0];
+    
+    // Jika perangkat Anda memiliki lebih dari 1 jenis suara bahasa Indonesia
+    // (misalnya ada varian Pria dan Wanita), Anda bisa mengubah angka indeksnya:
+    // utterance.voice = idVoices[1]; // Hapus tanda komentar (//) di depan jika ingin tes suara ke-2
+  }
   
   window.speechSynthesis.speak(utterance);
 }
