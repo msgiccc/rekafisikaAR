@@ -117,8 +117,12 @@ export async function speakText(text) {
   // 3. Coba menggunakan ElevenLabs (Suara Manusia Ultra-Realistis)
   if (elApiKey && navigator.onLine) {
     try {
-      // Menggunakan Adam (Suara Pria) dengan model Multilingual v2 yang mendukung bahasa Indonesia
-      const voiceId = 'pNInz6obpgDQGcFmaJcg'; 
+      // Menggunakan Voice "Charlie" (Lebih natural & kasual untuk Bahasa Indonesia di model v2)
+      // Jika Anda ingin menggunakan suara spesifik orang Indonesia:
+      // 1. Buka ElevenLabs -> Voice Library -> Cari "Indonesian"
+      // 2. Add ke VoiceLab Anda, lalu Copy Voice ID-nya dan ganti string di bawah ini:
+      const voiceId = 'IKne3meq5aSn9XLyUdCD'; // Default: Charlie
+      
       const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?optimize_streaming_latency=1`, {
         method: 'POST',
         headers: {
