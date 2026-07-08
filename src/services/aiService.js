@@ -118,7 +118,7 @@ export async function speakText(text) {
   if (tcApiKey && navigator.onLine) {
     try {
       // Menggunakan Voice ID khusus dari pengguna
-      const voiceId = 'tc_69f2e455ea79fd197aa0476f'; 
+      const voiceId = 'tc_67e38e6d4600650873ac157c'; 
       
       const response = await fetch('https://api.typecast.ai/v1/text-to-speech', {
         method: 'POST',
