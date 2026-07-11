@@ -13,8 +13,10 @@ const ARViewer = () => {
   const requestRef = useRef();
   
   const [isRecording, setIsRecording] = useState(false);
-  // Store AI Response to be rendered on Canvas
   const aiResponseRef = useRef(null);
+  
+  // Store smoothed Z-Depth Scale
+  const scaleRef = useRef(1.0);
   
   // Array of { t, x, y } capped at 150 frames for graph
   const motionHistoryRef = useRef([]);
@@ -77,7 +79,6 @@ const ARViewer = () => {
     };
   }, [selectedDeviceId]);
 
-  // Helper for drawing wrapped text on canvas
   const wrapText = (ctx, text, x, y, maxWidth, lineHeight) => {
     const words = text.split(' ');
     let line = '';
@@ -152,8 +153,16 @@ const ARViewer = () => {
         const centerX = (sumX / count) * (width / lowW);
         const centerY = (sumY / count) * (height / lowH);
         
+        // Z-Depth Estimation based on Pixel Count (Area to Radius ratio)
+        const radius = Math.sqrt(count);
+        let targetScale = radius / 10;
+        targetScale = Math.min(Math.max(targetScale, 0.4), 2.0); // Clamp to prevent explosion
+        
+        // Lerp Smoothing to prevent Z-jittering
+        scaleRef.current = scaleRef.current + (targetScale - scaleRef.current) * 0.1;
+
         motionHistoryRef.current.push({ t: now, x: centerX, y: centerY });
-        // Retain 150 frames max to avoid memory leak and for long graph
+        // Retain 150 frames max
         if (motionHistoryRef.current.length > 150) {
           motionHistoryRef.current.shift();
         }
@@ -161,6 +170,7 @@ const ARViewer = () => {
 
       const history = motionHistoryRef.current;
       let currentPt = null;
+      let currentScale = scaleRef.current;
 
       if (history.length > 1) {
         // Draw Cyan Trail
@@ -197,43 +207,51 @@ const ARViewer = () => {
         const Fy = avgY - currentPt.y;
         drawArrow(ctx, currentPt.x, currentPt.y, currentPt.x + Fx * 0.4, currentPt.y + Fy * 0.4, '#ef4444');
 
-        // Velocity Vector (Green)
+        // Velocity Vector (Green) with Depth-Corrected Normalization
         if (history.length > 5) {
           const pastPt = history[history.length - 5];
           const dt = (currentPt.t - pastPt.t) / 1000;
           if (dt > 0) {
-            const vx = (currentPt.x - pastPt.x) / dt;
-            const vy = (currentPt.y - pastPt.y) / dt;
-            const scale = 0.08;
-            drawArrow(ctx, currentPt.x, currentPt.y, currentPt.x + vx * scale, currentPt.y + vy * scale, '#10b981');
+            // Normalize velocity by dividing physical screen pixels by current Z-depth scale
+            const vx = ((currentPt.x - pastPt.x) / dt) / currentScale;
+            const vy = ((currentPt.y - pastPt.y) / dt) / currentScale;
+            const scaleVel = 0.08;
+            drawArrow(ctx, currentPt.x, currentPt.y, currentPt.x + vx * scaleVel, currentPt.y + vy * scaleVel, '#10b981');
           }
         }
       }
 
       // -------------------------------------------------------------
-      // TRUE AR IN-CANVAS HUD (Pseudo-3D Isometric Rendering)
+      // TRUE AR IN-CANVAS HUD (Pseudo-3D Isometric & Auto-Scaling)
       // -------------------------------------------------------------
       if (currentPt) {
-        const hudX = currentPt.x + 80;
-        const hudY = currentPt.y - 150;
+        ctx.save();
         
-        // Draw Visual Anchor (Tether Line) BEFORE matrix transform
+        // 1. Move Canvas Origin precisely to the ball's center
+        ctx.translate(currentPt.x, currentPt.y);
+        
+        // 2. Apply Z-Depth Estimation Scale
+        ctx.scale(currentScale, currentScale);
+        
+        // Now HUD coordinates are relative to the ball (0,0) inside the scaled space
+        const localHudX = 80;
+        const localHudY = -150;
+        
+        // Draw Visual Anchor (Tether Line) from Ball (0,0) to HUD base
         ctx.beginPath();
-        ctx.moveTo(currentPt.x, currentPt.y);
-        ctx.lineTo(hudX, hudY + 220); // Connects to bottom-left of HUD
+        ctx.moveTo(0, 0);
+        ctx.lineTo(localHudX, localHudY + 220); // Connects to bottom-left of HUD
         ctx.strokeStyle = '#38bdf8';
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 2 / currentScale; // Keep line visually sharp despite scaling
         ctx.shadowBlur = 10;
         ctx.shadowColor = '#38bdf8';
         ctx.stroke();
         ctx.shadowBlur = 0;
 
-        ctx.save();
+        // 3. Translate to the HUD's anchor point
+        ctx.translate(localHudX, localHudY);
         
-        ctx.translate(hudX, hudY);
-        
-        // Pseudo-3D Skew Transform (-15 degrees horizontal skew)
-        // Transform Matrix: (scaleX, skewY, skewX, scaleY, translateX, translateY)
+        // 4. Apply Pseudo-3D Skew Transform (-15 degrees horizontal skew)
         const skewAmount = -0.26; 
         ctx.transform(1, 0, skewAmount, 1, 0, 0);
 
@@ -344,7 +362,7 @@ const ARViewer = () => {
         const textToDraw = aiResponse ? aiResponse.text : "⚡ Menganalisis lintasan spasial... Tekan mikrofon untuk kesimpulan AI";
         wrapText(ctx, textToDraw, 20, 185, hudW - 40, 16);
 
-        ctx.restore(); // Restore from 3D Matrix
+        ctx.restore(); // Restore from 3D Matrix & Scale Transform
       }
     }
     
@@ -357,6 +375,7 @@ const ARViewer = () => {
     if (appState === 'tracking') {
       motionHistoryRef.current = [];
       aiResponseRef.current = null;
+      scaleRef.current = 1.0;
       requestRef.current = requestAnimationFrame(trackFrame);
     }
     return () => cancelAnimationFrame(requestRef.current);
@@ -405,11 +424,9 @@ const ARViewer = () => {
       const historyCopy = [...motionHistoryRef.current];
       const result = await tanyaAITutorVoice(transcript, historyCopy);
       
-      // Update the Canvas Ref instead of standard DOM State
       aiResponseRef.current = result;
       speakText(result.text);
       
-      // Auto dismiss Hologram after 15 seconds
       setTimeout(() => {
         aiResponseRef.current = null;
       }, 15000);
