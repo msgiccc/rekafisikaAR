@@ -11,6 +11,7 @@ const ARViewer = () => {
   const canvasRef = useRef(null);
   const lowResCanvasRef = useRef(null);
   const requestRef = useRef();
+  const popupRef = useRef(null);
   
   const [isRecording, setIsRecording] = useState(false);
   const [aiResponse, setAiResponse] = useState(null);
@@ -156,6 +157,16 @@ const ARViewer = () => {
         ctx.shadowBlur = 0; 
 
         const currentPt = history[history.length - 1];
+
+        // Update popup position dynamically if it exists
+        if (popupRef.current) {
+          // Clamp position so it doesn't go offscreen
+          const popX = Math.min(Math.max(currentPt.x, 20), width - 340);
+          const popY = Math.min(Math.max(currentPt.y, 100), height - 100);
+          popupRef.current.style.left = `${popX}px`;
+          popupRef.current.style.top = `${popY}px`;
+          popupRef.current.style.transform = `translate(40px, -50%)`;
+        }
         
         ctx.beginPath();
         ctx.arc(currentPt.x, currentPt.y, 8, 0, 2 * Math.PI);
@@ -303,7 +314,7 @@ const ARViewer = () => {
             </div>
 
             {aiResponse && (
-              <div className="hologram-popup fade-in">
+              <div ref={popupRef} className="hologram-popup fade-in" style={ { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' } }>
                 <div className="hologram-header">
                   <div className="hologram-title">
                     <span>✨</span> Analisis AI
