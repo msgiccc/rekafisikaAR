@@ -1,25 +1,67 @@
 import React from 'react';
 
-// Initialize Groq Key
-const apiKey = import.meta.env.VITE_GROQ_API_KEY;
+const groqApiKey = import.meta.env.VITE_GROQ_API_KEY;
 
-const systemPrompt = `Kamu adalah AI Voice Assistant pintar (RekaFisika AI).
-Tugasmu adalah menjawab pertanyaan pengguna secara langsung, cerdas, dan natural layaknya JARVIS, yang berfokus pada fisika turbin angin energi terbarukan.
-ATURAN WAJIB:
-- Jawablah secara SINGKAT (maksimal 2 kalimat) agar sangat nyaman didengar lewat Text-to-Speech.
-- Jawab persis apa yang ditanyakan pengguna. JANGAN berikan penjelasan umum jika tidak diminta.
-- Jika pengguna menanyakan spesifik tentang "Rotor", "Generator", atau "Menara", sebutkan kata tersebut dalam jawabanmu.`;
-
-export async function tanyaAITutorVoice(userPrompt) {
-  let responseText = "";
+// Process physical motion data into Period and Frequency
+function analyzeMotionData(history) {
+  if (!history || history.length < 10) return null;
   
-  if (apiKey && navigator.onLine) {
+  // Find zero crossings of X relative to average X to count cycles
+  const avgX = history.reduce((sum, pt) => sum + pt.x, 0) / history.length;
+  let crossings = [];
+  
+  for (let i = 1; i < history.length; i++) {
+    const prev = history[i - 1].x - avgX;
+    const curr = history[i].x - avgX;
+    // Check if sign changed
+    if (prev * curr < 0) {
+      crossings.push(history[i].t);
+    }
+  }
+
+  // A full period T is the time between 3 crossings (e.g. going left, right, left)
+  // or simply 2 * time between consecutive crossings
+  if (crossings.length >= 2) {
+    const timeDiffs = [];
+    for (let i = 1; i < crossings.length; i++) {
+      timeDiffs.push(crossings[i] - crossings[i - 1]);
+    }
+    const avgHalfPeriodMs = timeDiffs.reduce((sum, d) => sum + d, 0) / timeDiffs.length;
+    const periodS = (avgHalfPeriodMs * 2) / 1000;
+    const frequencyHz = 1 / periodS;
+    
+    return {
+      period: periodS,
+      frequency: frequencyHz
+    };
+  }
+  
+  return null;
+}
+
+export async function tanyaAITutorVoice(userPrompt, motionHistory) {
+  let responseText = "";
+  const stats = analyzeMotionData(motionHistory);
+  
+  let systemPrompt = `Kamu adalah Asisten Laboratorium Fisika Digital (RekaFisika LabVision).
+Tugasmu adalah menganalisis data gerak osilasi yang ditangkap oleh kamera tracker dan menjawab pertanyaan pengguna.
+ATURAN WAJIB:
+- Jawablah secara SINGKAT (maksimal 2 kalimat padat) agar nyaman dibacakan mesin AI Voice.
+- JANGAN berikan markdown bintang atau format tebal.`;
+
+  if (stats) {
+    systemPrompt += `\nDATA SAAT INI: Periode (T) = ${stats.period.toFixed(2)} sekon, Frekuensi (f) = ${stats.frequency.toFixed(2)} Hz. Jika relevan dengan pertanyaan, sebutkan nilai ini dalam analisismu.`;
+  } else {
+    systemPrompt += `\nDATA SAAT INI: Belum ada data gerak osilasi yang cukup (Objek belum diayunkan cukup lama).`;
+  }
+
+  if (groqApiKey && navigator.onLine) {
     try {
       const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
+          'Authorization': `Bearer ${groqApiKey}`
         },
         body: JSON.stringify({
           model: 'llama-3.1-8b-instant',
@@ -42,83 +84,31 @@ export async function tanyaAITutorVoice(userPrompt) {
       }
     } catch (error) {
       console.error("Groq API gagal:", error);
-      responseText = "Maaf, gagal terhubung ke satelit Groq AI. Silakan periksa koneksi internet atau kunci API Anda.";
+      responseText = "Maaf, gagal terhubung ke satelit Groq AI. Silakan periksa koneksi internet.";
     }
-  }
-
-  if (!responseText) {
+  } else {
     responseText = "Sistem offline atau Kunci API Groq belum diatur dengan benar.";
   }
 
-  // Pendeteksi Komponen Mesin HANYA DARI PERTANYAAN USER (agar pertanyaan umum tidak tiba-tiba melompat)
-  const userText = userPrompt.toLowerCase();
-  let targetPart = null;
-  
-  if (userText.includes('rotor') || userText.includes('baling')) {
-    targetPart = 'rotor';
-  } else if (userText.includes('generator') || userText.includes('faraday') || userText.includes('nacelle')) {
-    targetPart = 'generator';
-  } else if (userText.includes('menara') || userText.includes('tower')) {
-    targetPart = 'tower';
-  }
-
-  return { text: responseText, targetPart };
+  return { text: responseText, stats };
 }
 
-
-
-// Utility: Pembersih Markdown (Mengubah **teks** menjadi <strong> HTML React bergaya hologram)
-export function formatMarkdownToReact(text) {
-  if (!text) return null;
-  const paragraphs = text.split('\n').filter(p => p.trim() !== '');
-  return paragraphs.map((paragraph, i) => {
-    // Split berdasarkan **
-    const parts = paragraph.split(/\*\*(.*?)\*\*/g);
-    return React.createElement(
-      'p',
-      { key: i, style: { marginBottom: '0.75rem', lineHeight: '1.5' } },
-      parts.map((part, index) => {
-        if (index % 2 !== 0) {
-          // Render teks tebal dengan warna Sci-Fi cyan
-          return React.createElement(
-            'strong',
-            { key: index, style: { color: '#38bdf8', fontWeight: '700', textShadow: '0 0 8px rgba(56, 189, 248, 0.6)' } },
-            part
-          );
-        }
-        // Hapus sisa bintang tunggal (*) jika masih bocor
-        const cleanPart = part.replace(/\*/g, '');
-        return React.createElement('span', { key: index }, cleanPart);
-      })
-    );
-  });
-}
-
-// Audio instance global agar bisa dihentikan saat dipanggil berulang
 let currentAudio = null;
 
-// Layanan Text-to-Speech (ElevenLabs Premium + Native Browser Fallback)
+// Pure Typecast.ai TTS Integration (No Native Fallback as requested)
 export async function speakText(text) {
-  // 1. Hentikan suara yang sedang berjalan (ElevenLabs)
   if (currentAudio) {
     currentAudio.pause();
     currentAudio.currentTime = 0;
     currentAudio = null;
   }
   
-  // 2. Hentikan suara bawaan (Browser TTS)
-  if (window.speechSynthesis) {
-    window.speechSynthesis.cancel();
-  }
-  
   const cleanText = text.replace(/\*/g, '').replace(/_/g, '').replace(/#/g, '');
   const tcApiKey = import.meta.env.VITE_TYPECAST_API_KEY;
 
-  // 3. Coba menggunakan Typecast.ai (Suara AI Pilihan Pengguna)
   if (tcApiKey && navigator.onLine) {
     try {
-      // Menggunakan Voice ID khusus dari pengguna
-      const voiceId = 'tc_67e38e6d4600650873ac157c'; 
+      const voiceId = 'tc_69f2e455ea79fd197aa0476f'; 
       
       const response = await fetch('https://api.typecast.ai/v1/text-to-speech', {
         method: 'POST',
@@ -138,29 +128,11 @@ export async function speakText(text) {
         const audioUrl = URL.createObjectURL(audioBlob);
         currentAudio = new Audio(audioUrl);
         await currentAudio.play();
-        return; // Berhasil! Jangan jalankan suara lokal bawaan HP
       } else {
-        console.warn("Typecast Kuota Habis atau Error. Beralih ke mesin suara lokal HP...");
+        console.error("Typecast Error/Quota Exceeded.");
       }
     } catch (error) {
       console.error("Typecast Gagal terhubung:", error);
     }
-  }
-
-  // 4. STRATEGI CADANGAN (FALLBACK): Gunakan suara lokal (Browser TTS) jika ElevenLabs gagal/habis kuota
-  if (window.speechSynthesis) {
-    const utterance = new SpeechSynthesisUtterance(cleanText);
-    utterance.lang = 'id-ID'; 
-    utterance.rate = 1.0; 
-    utterance.pitch = 1.1; 
-
-    const voices = window.speechSynthesis.getVoices();
-    const idVoices = voices.filter(v => v.lang.includes('id'));
-    
-    if (idVoices.length > 0) {
-      utterance.voice = idVoices[0];
-    }
-    
-    window.speechSynthesis.speak(utterance);
   }
 }

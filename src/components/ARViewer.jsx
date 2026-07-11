@@ -1,289 +1,292 @@
-import React, { useRef, useState } from 'react';
-import { tanyaAITutorVoice, formatMarkdownToReact, speakText } from '../services/aiService';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
+import { tanyaAITutorVoice, speakText } from '../services/aiService';
 
 const ARViewer = () => {
-  const modelRef = useRef(null);
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const lowResCanvasRef = useRef(null);
+  const requestRef = useRef();
+  
+  const [isRecording, setIsRecording] = useState(false);
+  const [aiResponse, setAiResponse] = useState(null);
+  
+  // Motion history state Ref for performance (avoiding re-renders)
+  const motionHistoryRef = useRef([]);
 
-  // Default Koordinat Hotspots (Kalibrasi Baru 30m)
-  const [hotspotPositions, setHotspotPositions] = useState({
-    rotor: { pos: "-0.108m 31.145m -2.543m", norm: "-0.161m 0.739m -0.654m" },
-    generator: { pos: "0.866m 30.734m 1.029m", norm: "0.975m 0.154m 0.159m" },
-    tower: { pos: "0.247m 15.496m -0.614m", norm: "0.645m 0.009m -0.764m" }
-  });
-
-  // True World-Space Holographic Pop-Up State (Single Dynamic Slot)
-  const [activePopup, setActivePopup] = useState({
-    isOpen: false,
-    title: '',
-    text: '',
-    formula: '',
-    position: '0m 0m 0m',
-    normal: '0m 1m 0m'
-  });
-
-  // UI States
-  const [isCalibrating, setIsCalibrating] = useState(false);
-  const [isListening, setIsListening] = useState(false);
-  const [voiceStatus, setVoiceStatus] = useState('');
-  const [toastMsg, setToastMsg] = useState('');
-
-  // Karena model ini tingginya 31 meter, kita harus mengubah default target ke titik tengah (15m) dan radius orbit sangat jauh (45m)
-  const defaultOrbit = "0deg 75deg 55m";
-  const defaultTarget = "0m 15m 0m";
-
-  const partDetails = {
-    rotor: { title: 'Rotor', formula: 'E_k = ½ m v²', camTarget: '0m 31m 0m', camOrbit: '20deg 75deg 15m' },
-    generator: { title: 'Generator', formula: 'Ɛ = -N (dΦ / dt)', camTarget: '0m 31m 0m', camOrbit: '-150deg 60deg 15m' },
-    tower: { title: 'Menara', formula: 'v(h) = v_ref * (h / h_ref)^α', camTarget: '0m 15m 0m', camOrbit: '45deg 85deg 25m' }
-  };
-
-  const showToast = (msg) => {
-    setToastMsg(msg);
-    setTimeout(() => setToastMsg(''), 4000);
-  };
-
-  const resetView = () => {
-    setActivePopup(prev => ({ ...prev, isOpen: false }));
-    if (modelRef.current) {
-      modelRef.current.cameraTarget = defaultTarget;
-      modelRef.current.cameraOrbit = defaultOrbit;
+  // Setup Camera Feed
+  useEffect(() => {
+    async function setupCamera() {
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+          });
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+            videoRef.current.play();
+          }
+        } catch (err) {
+          console.error("Camera access denied:", err);
+        }
+      }
     }
-    if (window.speechSynthesis) window.speechSynthesis.cancel();
-  };
+    setupCamera();
 
-  const activatePart = (partKey, aiText) => {
-    const details = partDetails[partKey];
-    if (modelRef.current && details) {
-      modelRef.current.cameraTarget = details.camTarget;
-      modelRef.current.cameraOrbit = details.camOrbit;
-    }
+    return () => {
+      if (videoRef.current && videoRef.current.srcObject) {
+        const tracks = videoRef.current.srcObject.getTracks();
+        tracks.forEach(track => track.stop());
+      }
+      cancelAnimationFrame(requestRef.current);
+    };
+  }, []);
 
-    if (details) {
-      // Shift X and Y so it floats nicely next to the massive components
-      const basePos = hotspotPositions[partKey].pos;
-      const parts = basePos.replace(/m/g, '').split(' ').map(parseFloat);
-      let shiftedPos = basePos;
+  // Tracking Engine (requestAnimationFrame loop)
+  const trackFrame = useCallback(() => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    const lowResCanvas = lowResCanvasRef.current;
+
+    if (video && video.readyState === video.HAVE_ENOUGH_DATA && canvas && lowResCanvas) {
+      // Set canvas sizes to match video
+      if (canvas.width !== video.clientWidth) {
+        canvas.width = video.clientWidth;
+        canvas.height = video.clientHeight;
+      }
       
-      if (parts.length === 3) {
-        const shiftX = partKey === 'generator' ? -2.5 : 2.5;
-        // Geser sedikit ke atas dan ke samping agar popup tidak menutupi model 30 meter
-        shiftedPos = `${(parts[0] + shiftX).toFixed(3)}m ${(parts[1] + 1.5).toFixed(3)}m ${(parts[2]).toFixed(3)}m`;
+      const width = video.clientWidth;
+      const height = video.clientHeight;
+      
+      const ctx = canvas.getContext('2d');
+      const lowCtx = lowResCanvas.getContext('2d', { willReadFrequently: true });
+      
+      // Clear main canvas overlay
+      ctx.clearRect(0, 0, width, height);
+
+      // Low-res processing for performance
+      const lowW = 320;
+      const lowH = 240;
+      lowResCanvas.width = lowW;
+      lowResCanvas.height = lowH;
+      lowCtx.drawImage(video, 0, 0, lowW, lowH);
+      
+      const frameData = lowCtx.getImageData(0, 0, lowW, lowH);
+      const data = frameData.data;
+      
+      let sumX = 0;
+      let sumY = 0;
+      let count = 0;
+
+      // Scan pixels for Neon Green (e.g. Tennis Ball)
+      for (let i = 0; i < data.length; i += 4) {
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+        
+        // Simple heuristic for bright green: G is dominant
+        if (g > 150 && r < g * 0.6 && b < g * 0.6) {
+          const pixelIndex = i / 4;
+          const x = pixelIndex % lowW;
+          const y = Math.floor(pixelIndex / lowW);
+          sumX += x;
+          sumY += y;
+          count++;
+        }
       }
 
-      setActivePopup({
-        isOpen: true,
-        title: details.title,
-        text: aiText,
-        formula: details.formula,
-        position: shiftedPos,
-        normal: hotspotPositions[partKey].norm
-      });
+      const now = performance.now();
+      
+      if (count > 20) { // Threshold to prevent noise
+        // Map back to full-res coordinates
+        const centerX = (sumX / count) * (width / lowW);
+        const centerY = (sumY / count) * (height / lowH);
+        
+        motionHistoryRef.current.push({ t: now, x: centerX, y: centerY });
+        
+        // Keep last 60 frames (approx 2 seconds at 30fps)
+        if (motionHistoryRef.current.length > 60) {
+          motionHistoryRef.current.shift();
+        }
+      }
+
+      // Physics Vector Generator rendering
+      const history = motionHistoryRef.current;
+      if (history.length > 1) {
+        // Draw Dot Trail (Cyan)
+        ctx.beginPath();
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.8)'; // Cyan
+        ctx.lineWidth = 3;
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+        ctx.moveTo(history[0].x, history[0].y);
+        for (let i = 1; i < history.length; i++) {
+          ctx.lineTo(history[i].x, history[i].y);
+        }
+        ctx.stroke();
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = '#38bdf8';
+        ctx.stroke(); // Double stroke for glow
+        ctx.shadowBlur = 0; // Reset shadow
+
+        // Render current point (Center)
+        const currentPt = history[history.length - 1];
+        
+        // Draw Target Marker
+        ctx.beginPath();
+        ctx.arc(currentPt.x, currentPt.y, 10, 0, 2 * Math.PI);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+        ctx.fill();
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Calculate Average Position (Equilibrium center approximation)
+        const avgX = history.reduce((sum, pt) => sum + pt.x, 0) / history.length;
+        const avgY = history.reduce((sum, pt) => sum + pt.y, 0) / history.length;
+
+        // Draw Restoring Force Vector (Red) pointing to equilibrium
+        const Fx = avgX - currentPt.x;
+        const Fy = avgY - currentPt.y;
+        drawArrow(ctx, currentPt.x, currentPt.y, currentPt.x + Fx * 0.5, currentPt.y + Fy * 0.5, '#ef4444');
+
+        // Calculate Velocity Vector (Green) using last 5 frames
+        if (history.length > 5) {
+          const pastPt = history[history.length - 5];
+          const dt = (currentPt.t - pastPt.t) / 1000; // in seconds
+          if (dt > 0) {
+            const vx = (currentPt.x - pastPt.x) / dt;
+            const vy = (currentPt.y - pastPt.y) / dt;
+            // Scale down velocity for display purposes
+            const scale = 0.1;
+            drawArrow(ctx, currentPt.x, currentPt.y, currentPt.x + vx * scale, currentPt.y + vy * scale, '#10b981');
+          }
+        }
+      }
     }
+    
+    requestRef.current = requestAnimationFrame(trackFrame);
+  }, []);
+
+  useEffect(() => {
+    requestRef.current = requestAnimationFrame(trackFrame);
+    return () => cancelAnimationFrame(requestRef.current);
+  }, [trackFrame]);
+
+  // Helper to draw vector arrows
+  const drawArrow = (ctx, fromX, fromY, toX, toY, color) => {
+    const headlen = 10; 
+    const dx = toX - fromX;
+    const dy = toY - fromY;
+    const angle = Math.atan2(dy, dx);
+    
+    ctx.beginPath();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 3;
+    ctx.moveTo(fromX, fromY);
+    ctx.lineTo(toX, toY);
+    ctx.lineTo(toX - headlen * Math.cos(angle - Math.PI / 6), toY - headlen * Math.sin(angle - Math.PI / 6));
+    ctx.moveTo(toX, toY);
+    ctx.lineTo(toX - headlen * Math.cos(angle + Math.PI / 6), toY - headlen * Math.sin(angle + Math.PI / 6));
+    ctx.stroke();
+    ctx.shadowBlur = 8;
+    ctx.shadowColor = color;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
   };
 
-  const handleManualHotspotClick = async (partKey, triggerText) => {
-    resetView();
-    setVoiceStatus(`AI memindai ${partDetails[partKey].title}...`);
-    activatePart(partKey, "⚡ Mengambil data fisika dari satelit AI...");
-
-    try {
-      const response = await tanyaAITutorVoice(triggerText);
-      activatePart(partKey, response.text);
-      speakText(response.text);
-      setVoiceStatus('');
-    } catch (error) {
-      activatePart(partKey, "Koneksi ke AI terputus. Silakan coba lagi.");
-      setVoiceStatus('');
-    }
-  };
-
-  // Voice AI Co-Pilot Logic
+  // Web Speech API Integration
   const startListening = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      alert("Browser Anda tidak mendukung Voice API. Silakan gunakan tombol klik.");
+      alert("Browser Anda tidak mendukung Speech Recognition (Gunakan Chrome).");
       return;
     }
 
     const recognition = new SpeechRecognition();
     recognition.lang = 'id-ID';
-    
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
     recognition.onstart = () => {
-      resetView();
-      setIsListening(true);
-      setVoiceStatus('🎙️ Mendengarkan...');
+      setIsRecording(true);
     };
 
     recognition.onresult = async (event) => {
+      setIsRecording(false);
       const transcript = event.results[0][0].transcript;
-      setIsListening(false);
-      setVoiceStatus(`🗣️ "${transcript}"`);
+      console.log("User Audio:", transcript);
+
+      // Send to AI Service with motion data
+      const historyCopy = [...motionHistoryRef.current];
+      const result = await tanyaAITutorVoice(transcript, historyCopy);
       
-      try {
-        const response = await tanyaAITutorVoice(transcript);
-        speakText(response.text);
-        
-        if (response.targetPart) {
-          activatePart(response.targetPart, response.text);
-        } else {
-          // General answer: don't move the camera, just show a center popup
-          setActivePopup({
-            isOpen: true,
-            title: 'Tutor AI RekaFisika',
-            text: response.text,
-            formula: '', // No specific formula for general questions
-            position: '0m 2.0m 0m',
-            normal: '0m 1m 0m'
-          });
-        }
-        
-        setTimeout(() => setVoiceStatus(''), 4000);
-      } catch (error) {
-        setVoiceStatus('Gagal terhubung ke AI.');
-        setTimeout(() => setVoiceStatus(''), 3000);
-      }
+      setAiResponse(result);
+      speakText(result.text);
     };
 
-    recognition.onerror = () => {
-      setIsListening(false);
-      setVoiceStatus('Suara tidak terdengar. Coba lagi.');
-      setTimeout(() => setVoiceStatus(''), 3000);
+    recognition.onerror = (event) => {
+      console.error("Speech Recognition Error:", event.error);
+      setIsRecording(false);
     };
 
     recognition.onend = () => {
-      if (isListening) setIsListening(false);
+      setIsRecording(false);
     };
 
     recognition.start();
   };
 
-  // Live Instant-Jump Calibration
-  const handleModelClick = (e) => {
-    if (!isCalibrating || !modelRef.current) return;
-    const viewer = modelRef.current;
-    const rect = viewer.getBoundingClientRect();
-    const hit = viewer.positionAndNormalFromPoint(e.clientX - rect.left, e.clientY - rect.top);
-    
-    if (hit) {
-      const posStr = `${hit.position.x.toFixed(3)}m ${hit.position.y.toFixed(3)}m ${hit.position.z.toFixed(3)}m`;
-      const normStr = `${hit.normal.x.toFixed(3)}m ${hit.normal.y.toFixed(3)}m ${hit.normal.z.toFixed(3)}m`;
-      
-      // Auto Jump! (Updating Rotor as primary test)
-      setHotspotPositions(prev => ({
-        ...prev,
-        rotor: { pos: posStr, norm: normStr } 
-      }));
-      
-      // Auto Copy
-      navigator.clipboard.writeText(`data-position="${posStr}" data-normal="${normStr}"`);
-      showToast("✅ Koordinat 100% pas disalin ke Clipboard! (Titik Rotor digeser sementara)");
-    }
-  };
-
   return (
-    <div className="ar-fullscreen-container">
-      {/* 1. Header Web Overlay */}
-      <div className="ar-overlay-header">
-        <h1 className="ar-title">RekaFisika AR <span>Mobile WebXR Edition</span></h1>
-        <button 
-          className={`btn-calibration ${isCalibrating ? 'active' : ''}`}
-          onClick={() => setIsCalibrating(!isCalibrating)}
-        >
-          {isCalibrating ? '🛑 Tutup Kalibrasi' : '🛠️ Kalibrasi Posisi'}
-        </button>
-      </div>
+    <div className="app-container-fullscreen">
+      <video ref={videoRef} className="cv-video-feed" playsInline muted autoPlay />
+      <canvas ref={canvasRef} className="cv-canvas-overlay" />
+      <canvas ref={lowResCanvasRef} className="cv-offscreen-canvas" />
 
-      {isCalibrating && (
-        <div className="calibration-banner">
-          👇 Klik di sembarang permukaan model 3D. Hotspot Rotor akan LANGSUNG MELOMPAT ke titik tersebut & koordinat otomatis tersalin!
+      <div className="ui-layer">
+        <div className="lab-header">
+          <h1>RekaFisika LabVision</h1>
+          <p>Real-Time AR Physics Tracker</p>
         </div>
-      )}
 
-      {toastMsg && (
-        <div className="toast-notification">
-          {toastMsg}
-        </div>
-      )}
-
-      {voiceStatus && (
-        <div className="voice-status-bar">
-          {voiceStatus}
-        </div>
-      )}
-
-      {/* 2. Full-Screen WebXR DOM Overlay */}
-      <model-viewer
-        ref={modelRef}
-        src="/turbin.glb"
-        alt="Model 3D Turbin Angin"
-        ar ar-modes="webxr scene-viewer quick-look" ar-scale="auto"
-        camera-controls auto-rotate autoplay
-        shadow-intensity="2" shadow-softness="0.8" exposure="1.15" environment-image="neutral"
-        camera-orbit={defaultOrbit} camera-target={defaultTarget}
-        onClick={handleModelClick}
-        style={{ width: "100%", height: "100dvh", backgroundColor: "#090d16", position: "relative", outline: "none" }}
-      >
-        {/* SEMUA ELEMEN INI SEKARANG BERADA DI DALAM KAMERA AR HP! */}
-
-        {/* --- ROTOR --- */}
-        <button 
-          slot="hotspot-rotor" data-position={hotspotPositions.rotor.pos} data-normal={hotspotPositions.rotor.norm} 
-          className="hotspot-scifi"
-          onClick={() => handleManualHotspotClick('rotor', 'Jelaskan tentang aerodinamika baling-baling dan gaya angkat turbin ini.')}
-        >
-          <div className="hotspot-ring"></div>
-          <div className="hotspot-dot"></div>
-        </button>
-
-        {/* --- GENERATOR --- */}
-        <button 
-          slot="hotspot-generator" data-position={hotspotPositions.generator.pos} data-normal={hotspotPositions.generator.norm} 
-          className="hotspot-scifi"
-          onClick={() => handleManualHotspotClick('generator', 'Jelaskan induksi elektromagnetik hukum Faraday di dalam generator ini.')}
-        >
-          <div className="hotspot-ring"></div>
-          <div className="hotspot-dot"></div>
-        </button>
-
-        {/* --- TOWER --- */}
-        <button 
-          slot="hotspot-tower" data-position={hotspotPositions.tower.pos} data-normal={hotspotPositions.tower.norm} 
-          className="hotspot-scifi"
-          onClick={() => handleManualHotspotClick('tower', 'Jelaskan alasan mengapa menara harus tinggi dengan profil kecepatan angin fluida.')}
-        >
-          <div className="hotspot-ring"></div>
-          <div className="hotspot-dot"></div>
-        </button>
-
-        {/* --- TRUE WORLD-SPACE HOLOGRAPHIC POPUP (SINGLE DYNAMIC SLOT) --- */}
-        {activePopup.isOpen && (
-          <div 
-            slot="hotspot-popup-ai" 
-            data-position={activePopup.position} 
-            data-normal={activePopup.normal} 
-            className="in-ar-hologram-card"
-          >
-            <div className="ws-card-header">
-              <h3>⚡ {activePopup.title}</h3>
-              <button onClick={(e) => { e.stopPropagation(); resetView(); }}>✕</button>
+        {/* AI Pop-Up Result */}
+        {aiResponse && (
+          <div className="hologram-popup">
+            <div className="hologram-header">
+              <div className="hologram-title">
+                <span>🤖</span> Analisis AI
+              </div>
+              <button className="close-btn" onClick={() => setAiResponse(null)}>×</button>
             </div>
-            <div className="ws-card-body">{formatMarkdownToReact(activePopup.text)}</div>
-            <div className="ws-card-formula">{activePopup.formula}</div>
+            
+            {aiResponse.stats && (
+              <div className="hologram-stats">
+                <div className="stat-box">
+                  <div className="stat-value">{aiResponse.stats.period.toFixed(2)}s</div>
+                  <div className="stat-label">Periode (T)</div>
+                </div>
+                <div className="stat-box">
+                  <div className="stat-value">{aiResponse.stats.frequency.toFixed(2)}Hz</div>
+                  <div className="stat-label">Frekuensi (f)</div>
+                </div>
+              </div>
+            )}
+            
+            <div className="hologram-body">
+              {aiResponse.text}
+            </div>
           </div>
         )}
 
-        {/* --- VOICE AI CO-PILOT HUD --- */}
-        <div className="voice-hud-container">
+        <div className="ai-voice-btn-container">
           <button 
-            className={`voice-hud-btn ${isListening ? 'listening' : ''}`}
-            onClick={(e) => { e.stopPropagation(); startListening(); }}
-            title="🎙️ Tanya AI (Voice)"
+            className={`ai-voice-btn ${isRecording ? 'recording' : ''}`}
+            onClick={startListening}
+            disabled={isRecording}
           >
-            <div className="mic-icon">🎙️</div>
-            {isListening && <div className="audio-wave-rings"></div>}
+            <span>{isRecording ? '🔴 Merekam Suara...' : '🎙️ Minta Analisis AI'}</span>
           </button>
         </div>
-      </model-viewer>
+      </div>
     </div>
   );
 };
