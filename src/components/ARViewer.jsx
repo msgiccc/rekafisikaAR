@@ -213,13 +213,22 @@ const ARViewer = () => {
       // -------------------------------------------------------------
       // TRUE AR IN-CANVAS HUD (Pseudo-3D Isometric Rendering)
       // -------------------------------------------------------------
-      const aiResponse = aiResponseRef.current;
-      if (aiResponse && currentPt) {
-        ctx.save();
+      if (currentPt) {
+        const hudX = currentPt.x + 80;
+        const hudY = currentPt.y - 150;
         
-        // Base positioning relative to object (clamped so it doesn't go offscreen entirely)
-        const hudX = Math.min(Math.max(currentPt.x + 40, 50), width - 350);
-        const hudY = Math.min(Math.max(currentPt.y - 150, 50), height - 250);
+        // Draw Visual Anchor (Tether Line) BEFORE matrix transform
+        ctx.beginPath();
+        ctx.moveTo(currentPt.x, currentPt.y);
+        ctx.lineTo(hudX, hudY + 220); // Connects to bottom-left of HUD
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = 2;
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = '#38bdf8';
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        ctx.save();
         
         ctx.translate(hudX, hudY);
         
@@ -230,24 +239,24 @@ const ARViewer = () => {
 
         // Draw HUD Panel Background
         const hudW = 320;
-        const hudH = 220; // Expanded to fit the graph
+        const hudH = 220; 
         
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.7)'; // Slate glass
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.7)'; 
         ctx.shadowBlur = 20;
         ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
         ctx.beginPath();
         ctx.roundRect(0, 0, hudW, hudH, 12);
         ctx.fill();
         
-        ctx.shadowBlur = 0; // Reset shadow
+        ctx.shadowBlur = 0; 
         ctx.lineWidth = 1.5;
-        ctx.strokeStyle = 'rgba(56, 189, 248, 0.5)'; // Cyan border
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.5)'; 
         ctx.stroke();
 
         // Draw Header
         ctx.fillStyle = '#ffffff';
         ctx.font = 'bold 16px Inter, sans-serif';
-        ctx.fillText("✨ Analisis AI", 20, 30);
+        ctx.fillText("✨ Analisis AR Tracker", 20, 30);
         
         // Draw Separator Line
         ctx.beginPath();
@@ -257,17 +266,21 @@ const ARViewer = () => {
         ctx.stroke();
 
         // Draw Stats
+        const aiResponse = aiResponseRef.current;
         ctx.fillStyle = '#38bdf8';
         ctx.font = 'bold 24px Inter, sans-serif';
-        if (aiResponse.stats) {
+        if (aiResponse && aiResponse.stats) {
           ctx.fillText(`${aiResponse.stats.period.toFixed(2)}s`, 20, 75);
           ctx.fillText(`${aiResponse.stats.frequency.toFixed(2)}Hz`, 150, 75);
-          
-          ctx.fillStyle = '#94a3b8';
-          ctx.font = '10px Inter, sans-serif';
-          ctx.fillText("PERIODE (T)", 20, 95);
-          ctx.fillText("FREKUENSI (f)", 150, 95);
+        } else {
+          ctx.fillText(`-- s`, 20, 75);
+          ctx.fillText(`-- Hz`, 150, 75);
         }
+        
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '10px Inter, sans-serif';
+        ctx.fillText("PERIODE (T)", 20, 95);
+        ctx.fillText("FREKUENSI (f)", 150, 95);
 
         // Draw Sine Wave Graph Base Container
         const graphX = 20;
@@ -289,13 +302,11 @@ const ARViewer = () => {
 
         // Live Sine Graph Plotting
         if (history.length > 1) {
-          // Calculate Min/Max X from history to scale the graph Y axis
           const minHistoryX = Math.min(...history.map(h => h.x));
           const maxHistoryX = Math.max(...history.map(h => h.x));
-          const historyRange = (maxHistoryX - minHistoryX) || 1; // Prevent div by 0
+          const historyRange = (maxHistoryX - minHistoryX) || 1; 
 
           const newestTime = history[history.length - 1].t;
-          // Time window for the graph (e.g. 5000ms window based on 150 frames @ 30fps)
           const timeWindow = 5000; 
 
           ctx.beginPath();
@@ -308,14 +319,10 @@ const ARViewer = () => {
           for (let i = 0; i < history.length; i++) {
             const h = history[i];
             
-            // Map Time to X-axis (Right to Left scroll effect)
             const timeDiff = newestTime - h.t;
-            // Map 0 -> graphW, timeWindow -> 0
             const px = graphX + graphW - (timeDiff / timeWindow) * graphW;
             
             if (px >= graphX) {
-              // Map Object X position to Graph Y-axis
-              // (x - min) / range => 0 to 1. Flip Y so higher value goes up
               const normalizedVal = (h.x - minHistoryX) / historyRange;
               const py = graphY + graphH - (normalizedVal * graphH);
 
@@ -328,14 +335,14 @@ const ARViewer = () => {
             }
           }
           ctx.stroke();
-          ctx.shadowBlur = 0; // Reset glow
+          ctx.shadowBlur = 0; 
         }
 
         // Draw Text Box
         ctx.fillStyle = '#e2e8f0';
         ctx.font = '12px Inter, sans-serif';
-        // Wrap text starting below the graph
-        wrapText(ctx, aiResponse.text, 20, 185, hudW - 40, 16);
+        const textToDraw = aiResponse ? aiResponse.text : "⚡ Menganalisis lintasan spasial... Tekan mikrofon untuk kesimpulan AI";
+        wrapText(ctx, textToDraw, 20, 185, hudW - 40, 16);
 
         ctx.restore(); // Restore from 3D Matrix
       }
