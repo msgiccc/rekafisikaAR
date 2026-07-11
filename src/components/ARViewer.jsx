@@ -11,25 +11,23 @@ const ARViewer = () => {
   const canvasRef = useRef(null);
   const lowResCanvasRef = useRef(null);
   const requestRef = useRef();
-  const popupRef = useRef(null);
   
   const [isRecording, setIsRecording] = useState(false);
-  const [aiResponse, setAiResponse] = useState(null);
+  // Store AI Response to be rendered on Canvas
+  const aiResponseRef = useRef(null);
   
+  // Array of { t, x, y } capped at 150 frames for graph
   const motionHistoryRef = useRef([]);
 
-  // Fetch Available Cameras
   useEffect(() => {
     async function getCameras() {
       try {
-        // Request initial permission to enumerate properly
         await navigator.mediaDevices.getUserMedia({ video: true });
         const allDevices = await navigator.mediaDevices.enumerateDevices();
         const videoDevices = allDevices.filter(device => device.kind === 'videoinput');
         
         setDevices(videoDevices);
         
-        // Find environment camera as default if available
         const backCamera = videoDevices.find(d => d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('environment'));
         if (backCamera) {
           setSelectedDeviceId(backCamera.deviceId);
@@ -43,7 +41,6 @@ const ARViewer = () => {
     getCameras();
   }, []);
 
-  // Setup Video Stream whenever selectedDeviceId changes
   useEffect(() => {
     let stream = null;
     
@@ -80,9 +77,31 @@ const ARViewer = () => {
     };
   }, [selectedDeviceId]);
 
-  // Tracking Engine
+  // Helper for drawing wrapped text on canvas
+  const wrapText = (ctx, text, x, y, maxWidth, lineHeight) => {
+    const words = text.split(' ');
+    let line = '';
+    let currentY = y;
+
+    for (let n = 0; n < words.length; n++) {
+      const testLine = line + words[n] + ' ';
+      const metrics = ctx.measureText(testLine);
+      const testWidth = metrics.width;
+      
+      if (testWidth > maxWidth && n > 0) {
+        ctx.fillText(line, x, currentY);
+        line = words[n] + ' ';
+        currentY += lineHeight;
+      } else {
+        line = testLine;
+      }
+    }
+    ctx.fillText(line, x, currentY);
+    return currentY + lineHeight;
+  };
+
   const trackFrame = useCallback(() => {
-    if (appState !== 'tracking') return; // Do not track in setup mode
+    if (appState !== 'tracking') return;
     
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -113,6 +132,7 @@ const ARViewer = () => {
       
       let sumX = 0, sumY = 0, count = 0;
 
+      // Scan for Neon Green
       for (let i = 0; i < data.length; i += 4) {
         const r = data[i];
         const g = data[i + 1];
@@ -133,12 +153,15 @@ const ARViewer = () => {
         const centerY = (sumY / count) * (height / lowH);
         
         motionHistoryRef.current.push({ t: now, x: centerX, y: centerY });
-        if (motionHistoryRef.current.length > 60) {
+        // Retain 150 frames max to avoid memory leak and for long graph
+        if (motionHistoryRef.current.length > 150) {
           motionHistoryRef.current.shift();
         }
       }
 
       const history = motionHistoryRef.current;
+      let currentPt = null;
+
       if (history.length > 1) {
         // Draw Cyan Trail
         ctx.beginPath();
@@ -156,17 +179,7 @@ const ARViewer = () => {
         ctx.stroke(); 
         ctx.shadowBlur = 0; 
 
-        const currentPt = history[history.length - 1];
-
-        // Update popup position dynamically if it exists
-        if (popupRef.current) {
-          // Clamp position so it doesn't go offscreen
-          const popX = Math.min(Math.max(currentPt.x, 20), width - 340);
-          const popY = Math.min(Math.max(currentPt.y, 100), height - 100);
-          popupRef.current.style.left = `${popX}px`;
-          popupRef.current.style.top = `${popY}px`;
-          popupRef.current.style.transform = `translate(40px, -50%)`;
-        }
+        currentPt = history[history.length - 1];
         
         ctx.beginPath();
         ctx.arc(currentPt.x, currentPt.y, 8, 0, 2 * Math.PI);
@@ -196,6 +209,136 @@ const ARViewer = () => {
           }
         }
       }
+
+      // -------------------------------------------------------------
+      // TRUE AR IN-CANVAS HUD (Pseudo-3D Isometric Rendering)
+      // -------------------------------------------------------------
+      const aiResponse = aiResponseRef.current;
+      if (aiResponse && currentPt) {
+        ctx.save();
+        
+        // Base positioning relative to object (clamped so it doesn't go offscreen entirely)
+        const hudX = Math.min(Math.max(currentPt.x + 40, 50), width - 350);
+        const hudY = Math.min(Math.max(currentPt.y - 150, 50), height - 250);
+        
+        ctx.translate(hudX, hudY);
+        
+        // Pseudo-3D Skew Transform (-15 degrees horizontal skew)
+        // Transform Matrix: (scaleX, skewY, skewX, scaleY, translateX, translateY)
+        const skewAmount = -0.26; 
+        ctx.transform(1, 0, skewAmount, 1, 0, 0);
+
+        // Draw HUD Panel Background
+        const hudW = 320;
+        const hudH = 220; // Expanded to fit the graph
+        
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.7)'; // Slate glass
+        ctx.shadowBlur = 20;
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+        ctx.beginPath();
+        ctx.roundRect(0, 0, hudW, hudH, 12);
+        ctx.fill();
+        
+        ctx.shadowBlur = 0; // Reset shadow
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.5)'; // Cyan border
+        ctx.stroke();
+
+        // Draw Header
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 16px Inter, sans-serif';
+        ctx.fillText("✨ Analisis AI", 20, 30);
+        
+        // Draw Separator Line
+        ctx.beginPath();
+        ctx.moveTo(20, 42);
+        ctx.lineTo(hudW - 20, 42);
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+        ctx.stroke();
+
+        // Draw Stats
+        ctx.fillStyle = '#38bdf8';
+        ctx.font = 'bold 24px Inter, sans-serif';
+        if (aiResponse.stats) {
+          ctx.fillText(`${aiResponse.stats.period.toFixed(2)}s`, 20, 75);
+          ctx.fillText(`${aiResponse.stats.frequency.toFixed(2)}Hz`, 150, 75);
+          
+          ctx.fillStyle = '#94a3b8';
+          ctx.font = '10px Inter, sans-serif';
+          ctx.fillText("PERIODE (T)", 20, 95);
+          ctx.fillText("FREKUENSI (f)", 150, 95);
+        }
+
+        // Draw Sine Wave Graph Base Container
+        const graphX = 20;
+        const graphY = 110;
+        const graphW = hudW - 40;
+        const graphH = 50;
+
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
+        ctx.fillRect(graphX, graphY, graphW, graphH);
+        
+        // Center Line (Equilibrium)
+        ctx.beginPath();
+        ctx.moveTo(graphX, graphY + graphH / 2);
+        ctx.lineTo(graphX + graphW, graphY + graphH / 2);
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+        ctx.setLineDash([5, 5]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Live Sine Graph Plotting
+        if (history.length > 1) {
+          // Calculate Min/Max X from history to scale the graph Y axis
+          const minHistoryX = Math.min(...history.map(h => h.x));
+          const maxHistoryX = Math.max(...history.map(h => h.x));
+          const historyRange = (maxHistoryX - minHistoryX) || 1; // Prevent div by 0
+
+          const newestTime = history[history.length - 1].t;
+          // Time window for the graph (e.g. 5000ms window based on 150 frames @ 30fps)
+          const timeWindow = 5000; 
+
+          ctx.beginPath();
+          ctx.strokeStyle = '#38bdf8';
+          ctx.lineWidth = 2;
+          ctx.shadowBlur = 15;
+          ctx.shadowColor = '#38bdf8';
+
+          let firstPoint = true;
+          for (let i = 0; i < history.length; i++) {
+            const h = history[i];
+            
+            // Map Time to X-axis (Right to Left scroll effect)
+            const timeDiff = newestTime - h.t;
+            // Map 0 -> graphW, timeWindow -> 0
+            const px = graphX + graphW - (timeDiff / timeWindow) * graphW;
+            
+            if (px >= graphX) {
+              // Map Object X position to Graph Y-axis
+              // (x - min) / range => 0 to 1. Flip Y so higher value goes up
+              const normalizedVal = (h.x - minHistoryX) / historyRange;
+              const py = graphY + graphH - (normalizedVal * graphH);
+
+              if (firstPoint) {
+                ctx.moveTo(px, py);
+                firstPoint = false;
+              } else {
+                ctx.lineTo(px, py);
+              }
+            }
+          }
+          ctx.stroke();
+          ctx.shadowBlur = 0; // Reset glow
+        }
+
+        // Draw Text Box
+        ctx.fillStyle = '#e2e8f0';
+        ctx.font = '12px Inter, sans-serif';
+        // Wrap text starting below the graph
+        wrapText(ctx, aiResponse.text, 20, 185, hudW - 40, 16);
+
+        ctx.restore(); // Restore from 3D Matrix
+      }
     }
     
     if (appState === 'tracking') {
@@ -203,10 +346,10 @@ const ARViewer = () => {
     }
   }, [appState]);
 
-  // Restart tracking loop when state changes to 'tracking'
   useEffect(() => {
     if (appState === 'tracking') {
-      motionHistoryRef.current = []; // Reset history on start
+      motionHistoryRef.current = [];
+      aiResponseRef.current = null;
       requestRef.current = requestAnimationFrame(trackFrame);
     }
     return () => cancelAnimationFrame(requestRef.current);
@@ -255,8 +398,14 @@ const ARViewer = () => {
       const historyCopy = [...motionHistoryRef.current];
       const result = await tanyaAITutorVoice(transcript, historyCopy);
       
-      setAiResponse(result);
+      // Update the Canvas Ref instead of standard DOM State
+      aiResponseRef.current = result;
       speakText(result.text);
+      
+      // Auto dismiss Hologram after 15 seconds
+      setTimeout(() => {
+        aiResponseRef.current = null;
+      }, 15000);
     };
 
     recognition.start();
@@ -312,34 +461,6 @@ const ARViewer = () => {
               <h1>RekaFisika LabVision</h1>
               <p>Real-Time Tracking Active</p>
             </div>
-
-            {aiResponse && (
-              <div ref={popupRef} className="hologram-popup fade-in" style={ { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' } }>
-                <div className="hologram-header">
-                  <div className="hologram-title">
-                    <span>✨</span> Analisis AI
-                  </div>
-                  <button className="close-btn" onClick={() => setAiResponse(null)}>×</button>
-                </div>
-                
-                {aiResponse.stats && (
-                  <div className="hologram-stats">
-                    <div className="stat-box">
-                      <div className="stat-value">{aiResponse.stats.period.toFixed(2)}s</div>
-                      <div className="stat-label">Periode (T)</div>
-                    </div>
-                    <div className="stat-box">
-                      <div className="stat-value">{aiResponse.stats.frequency.toFixed(2)}Hz</div>
-                      <div className="stat-label">Frekuensi (f)</div>
-                    </div>
-                  </div>
-                )}
-                
-                <div className="hologram-body">
-                  {aiResponse.text}
-                </div>
-              </div>
-            )}
 
             <div className="ai-voice-btn-container">
               <button 
